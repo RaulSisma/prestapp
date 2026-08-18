@@ -1,0 +1,213 @@
+import React, { useState } from 'react';
+import { 
+  DollarSign, Plus, Search, 
+  CheckCircle2, AlertTriangle, Clock 
+} from 'lucide-react';
+import { useData } from '../contexts/DataContext';
+import { useAuth } from '../contexts/AuthContext';
+import { Loan, Customer } from '../types';
+import { LoanModal } from '../components/LoanModal';
+import { PaymentModal } from '../components/PaymentModal';
+
+export const LoansPage: React.FC = () => {
+  const { loans, customers, routes } = useData();
+  const { currentUser, role } = useAuth();
+
+  // Filtrar clientes permitidos según el rol del cobrador
+  const allowedRoutes = role === 'ADMIN' 
+    ? routes 
+    : routes.filter(r => r.usuario_id === currentUser?.id);
+  const allowedRouteIds = allowedRoutes.map(r => r.id);
+  const allowedCustomerIds = customers
+    .filter(c => allowedRouteIds.includes(c.ruta_id))
+    .map(c => c.id);
+
+  const scopedLoans = role === 'ADMIN'
+    ? loans
+    : loans.filter(l => allowedCustomerIds.includes(l.cliente_id));
+
+  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [filterStatus, setFilterStatus] = useState<string>('TODOS');
+  
+  const [showLoanModal, setShowLoanModal] = useState<boolean>(false);
+  const [selectedLoanForPayment, setSelectedLoanForPayment] = useState<{
+    loan: Loan;
+    customer: Customer;
+  } | null>(null);
+
+  const filteredLoans = scopedLoans.filter(loan => {
+    const customer = customers.find(c => c.id === loan.cliente_id);
+    const matchesSearch = customer ? customer.nombre.toLowerCase().includes(searchTerm.toLowerCase()) || customer.barrio.toLowerCase().includes(searchTerm.toLowerCase()) : false;
+    const matchesStatus = filterStatus === 'TODOS' || loan.estado === filterStatus;
+    return matchesSearch && matchesStatus;
+  });
+
+  return (
+    <div className="space-y-4 sm:space-y-6 max-w-7xl mx-auto px-2 sm:px-0">
+      
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-extrabold text-white tracking-tight flex items-center gap-2.5 flex-wrap">
+            {role === 'ADMIN' ? 'Administración de Préstamos' : 'Préstamos de mis Rutas'}
+            <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30">
+              {scopedLoans.length} Totales
+            </span>
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-400 mt-1">
+            {role === 'ADMIN' ? 'Control global de cartera, saldos y cuotas.' : 'Préstamos activos asignados a tu zona de cobro.'}
+          </p>
+        </div>
+
+        <button
+          onClick={() => setShowLoanModal(true)}
+          className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-3 sm:py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-500/20 transition active:scale-95"
+        >
+          <Plus className="w-4 h-4" />
+          Nuevo Préstamo
+        </button>
+      </div>
+
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Buscar préstamo por nombre de cliente o barrio..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 bg-slate-900 border border-slate-800 rounded-2xl text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+          />
+        </div>
+
+        <select
+          value={filterStatus}
+          onChange={(e) => setFilterStatus(e.target.value)}
+          className="w-full sm:w-auto px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-2xl text-xs sm:text-sm font-semibold text-white focus:outline-none"
+        >
+          <option value="TODOS">Todos los Estados</option>
+          <option value="ACTIVO">Activos</option>
+          <option value="EN_MORA">En Mora</option>
+          <option value="PAGADO">Pagados Completos</option>
+        </select>
+      </div>
+
+      <div className="space-y-4">
+        {filteredLoans.length === 0 ? (
+          <div className="p-8 text-center glass-panel rounded-3xl border border-slate-800 text-slate-400 text-xs sm:text-sm">
+            No se encontraron préstamos asignados a tus clientes.
+          </div>
+        ) : (
+          filteredLoans.map(loan => {
+            const customer = customers.find(c => c.id === loan.cliente_id);
+            const route = routes.find(r => r.id === customer?.ruta_id);
+
+            const progressPct = Math.min(100, Math.round(((loan.monto_total - loan.saldo) / loan.monto_total) * 100));
+
+            return (
+              <div 
+                key={loan.id}
+                className="glass-card p-4 sm:p-5 rounded-3xl border border-slate-800/80 hover:border-slate-700 transition space-y-4"
+              >
+                
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="font-bold text-base sm:text-lg text-white">{customer?.nombre || 'Cliente Desconocido'}</h3>
+                      <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                        {route?.nombre || 'Sin Ruta'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Inicio: {loan.fecha_inicio} • Frecuencia: <span className="text-emerald-400 font-semibold">{loan.tipo_pago}</span>
+                    </p>
+                  </div>
+
+                  <div>
+                    {loan.estado === 'PAGADO' ? (
+                      <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-bold border border-emerald-500/30 flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Pagado Completo
+                      </span>
+                    ) : loan.estado === 'EN_MORA' ? (
+                      <span className="px-3 py-1 rounded-full bg-red-500/20 text-red-400 text-xs font-bold border border-red-500/30 flex items-center gap-1">
+                        <AlertTriangle className="w-3.5 h-3.5" /> En Mora
+                      </span>
+                    ) : (
+                      <span className="px-3 py-1 rounded-full bg-blue-500/20 text-blue-400 text-xs font-bold border border-blue-500/30 flex items-center gap-1">
+                        <Clock className="w-3.5 h-3.5" /> Activo
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3 p-3.5 sm:p-4 rounded-2xl bg-slate-900/80 border border-slate-800">
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">Monto Inicial</span>
+                    <span className="text-sm sm:text-base font-bold text-white">${loan.monto.toLocaleString('es-CO')}</span>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">Total con Interés</span>
+                    <span className="text-sm sm:text-base font-bold text-slate-200">${loan.monto_total.toLocaleString('es-CO')}</span>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">Valor Cuota</span>
+                    <span className="text-sm sm:text-base font-extrabold text-emerald-400">${loan.valor_cuota.toLocaleString('es-CO')}</span>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase font-semibold block">Saldo Restante</span>
+                    <span className="text-sm sm:text-base font-extrabold text-red-400">${loan.saldo.toLocaleString('es-CO')}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs text-slate-400">
+                    <span>Avance: {loan.cuotas_pagadas} de {loan.cuotas_totales} cuotas</span>
+                    <span className="font-bold text-emerald-400">{progressPct}%</span>
+                  </div>
+                  <div className="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden">
+                    <div 
+                      className="bg-emerald-500 h-2.5 rounded-full transition-all duration-500"
+                      style={{ width: `${progressPct}%` }}
+                    />
+                  </div>
+                </div>
+
+                {loan.estado !== 'PAGADO' && customer && (
+                  <div className="flex justify-end pt-2">
+                    <button
+                      onClick={() => setSelectedLoanForPayment({ loan, customer })}
+                      className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-xs shadow-md transition active:scale-95"
+                    >
+                      <DollarSign className="w-4 h-4" /> Registrar Pago / Abono
+                    </button>
+                  </div>
+                )}
+
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {showLoanModal && (
+        <LoanModal
+          customer={null}
+          onClose={() => setShowLoanModal(false)}
+        />
+      )}
+
+      {selectedLoanForPayment && (
+        <PaymentModal
+          loan={selectedLoanForPayment.loan}
+          customer={selectedLoanForPayment.customer}
+          onClose={() => setSelectedLoanForPayment(null)}
+        />
+      )}
+
+    </div>
+  );
+};
+
+export default LoansPage;

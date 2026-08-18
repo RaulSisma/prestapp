@@ -1,0 +1,407 @@
+import React, { useState } from 'react';
+import { 
+  Phone, Mail, X, UserPlus, RotateCcw, 
+  FileText, CheckCircle, Edit2, MapPin
+} from 'lucide-react';
+import { useData } from '../contexts/DataContext';
+import { UserRole, User } from '../types';
+
+export const UsersPage: React.FC = () => {
+  const { users, routes, addUser, updateUser, updateRoute, resetUserPassword } = useData();
+  const [showAddUserModal, setShowAddUserModal] = useState<boolean>(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [resetModalUser, setResetModalUser] = useState<User | null>(null);
+
+  // Form campos
+  const [formNombre, setFormNombre] = useState<string>('');
+  const [formCorreo, setFormCorreo] = useState<string>('');
+  const [formDocumento, setFormDocumento] = useState<string>('');
+  const [formTelefono, setFormTelefono] = useState<string>('');
+  const [formRol, setFormRol] = useState<UserRole>('COBRADOR');
+  const [formAssignedRouteIds, setFormAssignedRouteIds] = useState<string[]>([]);
+
+  const [notification, setNotification] = useState<string>('');
+
+  const handleOpenAddModal = () => {
+    setEditingUser(null);
+    setFormNombre('');
+    setFormCorreo('');
+    setFormDocumento('');
+    setFormTelefono('');
+    setFormRol('COBRADOR');
+    setFormAssignedRouteIds([]);
+    setShowAddUserModal(true);
+  };
+
+  const handleOpenEditModal = (user: User) => {
+    setEditingUser(user);
+    setFormNombre(user.nombre);
+    setFormCorreo(user.correo);
+    setFormDocumento(user.documento);
+    setFormTelefono(user.telefono || '');
+    setFormRol(user.rol);
+    const userCurrentRouteIds = routes.filter(r => r.usuario_id === user.id).map(r => r.id);
+    setFormAssignedRouteIds(userCurrentRouteIds);
+    setShowAddUserModal(true);
+  };
+
+  const handleSaveUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formNombre || !formCorreo || !formDocumento) return;
+
+    if (editingUser) {
+      await updateUser(editingUser.id, {
+        nombre: formNombre,
+        correo: formCorreo,
+        documento: formDocumento,
+        telefono: formTelefono,
+        rol: formRol
+      });
+
+      if (formRol === 'COBRADOR') {
+        for (const r of routes) {
+          const isSelected = formAssignedRouteIds.includes(r.id);
+          if (isSelected && r.usuario_id !== editingUser.id) {
+            await updateRoute(r.id, { usuario_id: editingUser.id });
+          } else if (!isSelected && r.usuario_id === editingUser.id) {
+            const otherAdmin = users.find(u => u.rol === 'ADMIN');
+            if (otherAdmin) {
+              await updateRoute(r.id, { usuario_id: otherAdmin.id });
+            }
+          }
+        }
+      }
+
+      setNotification(`Usuario ${formNombre} actualizado con éxito.`);
+    } else {
+      const newUser = await addUser({
+        nombre: formNombre,
+        correo: formCorreo,
+        documento: formDocumento,
+        telefono: formTelefono,
+        rol: formRol,
+        activo: true
+      });
+
+      if (formRol === 'COBRADOR' && formAssignedRouteIds.length > 0) {
+        for (const routeId of formAssignedRouteIds) {
+          await updateRoute(routeId, { usuario_id: newUser.id });
+        }
+      }
+
+      setNotification(`Usuario ${formNombre} creado con éxito. Contraseña inicial: ${formDocumento}`);
+    }
+
+    setShowAddUserModal(false);
+    setEditingUser(null);
+  };
+
+  const handleConfirmResetPassword = async () => {
+    if (!resetModalUser) return;
+    try {
+      const defaultPass = await resetUserPassword(resetModalUser.id);
+      setNotification(`La contraseña de ${resetModalUser.nombre} ha sido reestablecida a su documento: ${defaultPass}`);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setResetModalUser(null);
+    }
+  };
+
+  const toggleRouteSelection = (routeId: string) => {
+    setFormAssignedRouteIds(prev => 
+      prev.includes(routeId) ? prev.filter(id => id !== routeId) : [...prev, routeId]
+    );
+  };
+
+  return (
+    <div className="space-y-4 sm:space-y-6 max-w-7xl mx-auto px-2 sm:px-0">
+      
+      {/* HEADER ADAPTATIVO MÓVIL */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-extrabold text-white tracking-tight flex items-center gap-2.5 flex-wrap">
+            Cobradores y Usuarios
+            <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30">
+              {users.length} Registrados
+            </span>
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-400 mt-1">
+            Administración de usuarios, edición de cobradores, asignación de rutas y contraseñas.
+          </p>
+        </div>
+
+        <button
+          onClick={handleOpenAddModal}
+          className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-3 sm:py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-500/20 transition active:scale-95"
+        >
+          <UserPlus className="w-4 h-4" />
+          Nuevo Usuario
+        </button>
+      </div>
+
+      {/* NOTIFICACIÓN ALERTA */}
+      {notification && (
+        <div className="p-4 rounded-2xl bg-emerald-950/70 border border-emerald-800/80 text-emerald-300 text-xs sm:text-sm flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
+            <span>{notification}</span>
+          </div>
+          <button onClick={() => setNotification('')} className="text-emerald-400 hover:text-white">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* GRID DE USUARIOS */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+        {users.map(user => {
+          const userRoutes = routes.filter(r => r.usuario_id === user.id);
+
+          return (
+            <div 
+              key={user.id}
+              className="glass-card p-5 sm:p-6 rounded-3xl border border-slate-800/80 space-y-4 hover:border-slate-700 transition flex flex-col justify-between"
+            >
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-bold text-base border shrink-0 ${
+                      user.rol === 'ADMIN' ? 'bg-purple-500/20 text-purple-400 border-purple-500/30' : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                    }`}>
+                      {user.nombre.charAt(0)}
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="font-bold text-base text-white truncate">{user.nombre}</h3>
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        user.rol === 'ADMIN' ? 'bg-purple-500/20 text-purple-300' : 'bg-emerald-500/20 text-emerald-300'
+                      }`}>
+                        {user.rol}
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => handleOpenEditModal(user)}
+                    className="p-2 rounded-xl text-slate-400 hover:text-emerald-400 hover:bg-slate-800 transition"
+                    title="Editar Cobrador / Usuario"
+                  >
+                    <Edit2 className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="space-y-2 text-xs text-slate-300 pt-2 border-t border-slate-800">
+                  <div className="flex items-center gap-2">
+                    <Mail className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                    <span className="truncate">{user.correo}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <FileText className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                    <span>Cédula/ID: <strong className="text-emerald-400 font-mono">{user.documento}</strong></span>
+                  </div>
+                  {user.telefono && (
+                    <div className="flex items-center gap-2">
+                      <Phone className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                      <span>{user.telefono}</span>
+                    </div>
+                  )}
+                </div>
+
+                {user.rol === 'COBRADOR' && (
+                  <div className="p-3 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-1">
+                    <span className="text-[10px] text-slate-400 font-semibold uppercase block">
+                      Rutas Asignadas ({userRoutes.length})
+                    </span>
+                    {userRoutes.length > 0 ? (
+                      <div className="flex flex-wrap gap-1 pt-1">
+                        {userRoutes.map(r => (
+                          <span key={r.id} className="text-[11px] font-medium px-2 py-0.5 rounded-lg bg-slate-800 text-slate-300 border border-slate-700 flex items-center gap-1">
+                            <MapPin className="w-3 h-3 text-emerald-400" />
+                            {r.nombre}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-slate-500 italic">Sin rutas asignadas actualmente.</span>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Botón Reset Contraseña por Admin */}
+              <div className="pt-3 border-t border-slate-800">
+                <button
+                  onClick={() => setResetModalUser(user)}
+                  className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-amber-400 hover:text-amber-300 border border-slate-700 text-xs font-semibold transition"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  Restablecer Contraseña
+                </button>
+              </div>
+
+            </div>
+          );
+        })}
+      </div>
+
+      {/* MODAL CREAR / EDITAR USUARIO */}
+      {showAddUserModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full overflow-hidden shadow-2xl">
+            <div className="flex justify-between items-center px-5 sm:px-6 py-4 border-b border-slate-800">
+              <h3 className="font-bold text-white text-base sm:text-lg">
+                {editingUser ? `Editar: ${editingUser.nombre}` : 'Registrar Nuevo Usuario'}
+              </h3>
+              <button onClick={() => setShowAddUserModal(false)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveUser} className="p-5 sm:p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Nombre Completo *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ej: Carlos Cobrador"
+                  value={formNombre}
+                  onChange={e => setFormNombre(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Correo Electrónico *</label>
+                <input
+                  type="email"
+                  required
+                  placeholder="carlos@prestapp.com"
+                  value={formCorreo}
+                  onChange={e => setFormCorreo(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Cédula / Documento *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ej: 1098234567"
+                  value={formDocumento}
+                  onChange={e => setFormDocumento(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white font-mono focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Teléfono Móvil</label>
+                <input
+                  type="text"
+                  placeholder="300 123 4567"
+                  value={formTelefono}
+                  onChange={e => setFormTelefono(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Rol en el Sistema *</label>
+                <select
+                  value={formRol}
+                  onChange={e => setFormRol(e.target.value as UserRole)}
+                  className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-emerald-500"
+                >
+                  <option value="COBRADOR">COBRADOR (Cobranza en campo)</option>
+                  <option value="ADMIN">ADMINISTRADOR (Acceso global)</option>
+                </select>
+              </div>
+
+              {/* Selección Inmediata de Rutas Asignadas */}
+              {formRol === 'COBRADOR' && (
+                <div className="pt-2 border-t border-slate-800">
+                  <label className="block text-xs font-semibold text-emerald-400 mb-2 uppercase tracking-wider">
+                    Asignación Inmediata de Rutas ({formAssignedRouteIds.length} seleccionadas)
+                  </label>
+                  <div className="space-y-2 bg-slate-950 p-3 rounded-2xl border border-slate-800">
+                    {routes.length === 0 ? (
+                      <span className="text-xs text-slate-500 italic">No hay rutas registradas.</span>
+                    ) : (
+                      routes.map(r => {
+                        const isChecked = formAssignedRouteIds.includes(r.id);
+                        return (
+                          <label key={r.id} className="flex items-center justify-between p-2 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 cursor-pointer">
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => toggleRouteSelection(r.id)}
+                                className="w-4 h-4 rounded text-emerald-500 bg-slate-800 border-slate-700 focus:ring-emerald-500"
+                              />
+                              <span className="text-xs font-bold text-white">{r.nombre}</span>
+                            </div>
+                            <span className="text-[10px] text-slate-400">
+                              {r.descripcion || 'Sin zona'}
+                            </span>
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  className="w-full py-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-500/20 transition"
+                >
+                  {editingUser ? 'Guardar Cambios del Usuario' : 'Crear Usuario'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CONFIRMAR RESET DE CONTRASEÑA */}
+      {resetModalUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-5 sm:p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center gap-3 text-amber-400">
+              <RotateCcw className="w-6 h-6" />
+              <h3 className="font-bold text-white text-base sm:text-lg">¿Restablecer Contraseña?</h3>
+            </div>
+            
+            <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+              ¿Estás seguro de que deseas restablecer la contraseña de <strong className="text-white">{resetModalUser.nombre}</strong>?
+            </p>
+            <div className="p-3 rounded-xl bg-slate-800 border border-slate-700 text-xs">
+              La contraseña volverá a ser su número de cédula/documento: <strong className="text-emerald-400 font-mono text-sm block mt-1">{resetModalUser.documento}</strong>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={handleConfirmResetPassword}
+                className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-lg transition"
+              >
+                Sí, Restablecer
+              </button>
+              <button
+                onClick={() => setResetModalUser(null)}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+};
+
+export default UsersPage;
