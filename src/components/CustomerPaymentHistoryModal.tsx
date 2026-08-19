@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { 
   X, CheckCircle2, Clock, Calendar, 
-  DollarSign, TrendingUp
+  DollarSign, TrendingUp, RefreshCw, Award
 } from 'lucide-react';
 import { Customer, Loan } from '../types';
 import { useData } from '../contexts/DataContext';
+import { RefinanceLoanModal } from './RefinanceLoanModal';
 
 interface CustomerPaymentHistoryModalProps {
   customer: Customer;
@@ -18,6 +19,7 @@ export const CustomerPaymentHistoryModal: React.FC<CustomerPaymentHistoryModalPr
   onNewPayment
 }) => {
   const { loans, payments, postponements, routes, users } = useData();
+  const [showRefinanceModal, setShowRefinanceModal] = useState<boolean>(false);
 
   const customerLoans = loans.filter(l => l.cliente_id === customer.id);
   const [selectedLoanId, setSelectedLoanId] = useState<string>(
@@ -37,18 +39,40 @@ export const CustomerPaymentHistoryModal: React.FC<CustomerPaymentHistoryModalPr
     .filter(p => p.prestamo_id === selectedLoan?.id)
     .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
 
-  // Cálculo de cumplimiento y puntualidad
+  // Cálculo de cumplimiento y puntualidad del préstamo actual
   const totalAbonado = loanPayments.reduce((sum, p) => sum + p.valor, 0);
   const cuotasPagadas = selectedLoan ? selectedLoan.cuotas_pagadas : 0;
   const totalPostponements = loanPostponements.length;
   
-  // Porcentaje de cumplimiento crediticio realista y matemático
+  // Cálculo Histórico Global del Cliente en BD (Todos los préstamos + Todos los aplazamientos)
+  const allCustomerPostponements = (postponements || []).filter(p => p.cliente_id === customer.id);
+  const totalHistoricalCuotas = customerLoans.reduce((sum, l) => sum + l.cuotas_pagadas, 0);
+  const totalHistoricalPostponements = allCustomerPostponements.length;
+
+  let globalScore = 100;
+  let globalScoreLabel = 'Excelente Historial';
+  if (totalHistoricalCuotas === 0 && totalHistoricalPostponements > 0) {
+    globalScore = 0;
+    globalScoreLabel = 'Sin Pagos / Con Incumplimientos';
+  } else if (totalHistoricalCuotas + totalHistoricalPostponements > 0) {
+    globalScore = Math.round((totalHistoricalCuotas / (totalHistoricalCuotas + totalHistoricalPostponements)) * 100);
+    if (globalScore >= 90) globalScoreLabel = 'Excelente Historial';
+    else if (globalScore >= 75) globalScoreLabel = 'Buen Historial';
+    else if (globalScore >= 50) globalScoreLabel = 'Historial Regular';
+    else globalScoreLabel = 'Riesgo / Incumplido';
+  }
+
+  // Porcentaje de cumplimiento crediticio del préstamo seleccionado
   let compliancePercentage = 100;
   let complianceLabel = 'Excelente';
   let complianceColor = 'emerald';
 
   if (selectedLoan) {
-    if (selectedLoan.estado === 'PAGADO') {
+    if (selectedLoan.estado === 'REFINANCIADO') {
+      compliancePercentage = 100;
+      complianceLabel = 'Refinanciado';
+      complianceColor = 'teal';
+    } else if (selectedLoan.estado === 'PAGADO') {
       compliancePercentage = Math.max(70, 100 - (totalPostponements * 5));
       complianceLabel = compliancePercentage >= 90 ? 'Excelente' : 'Completado c/ Aplazamientos';
       complianceColor = 'emerald';
@@ -186,17 +210,42 @@ export const CustomerPaymentHistoryModal: React.FC<CustomerPaymentHistoryModalPr
         {/* CONTENT */}
         <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
           
+          {/* Calificación Global Histórica del Cliente en BD */}
+          <div className="p-3.5 rounded-2xl bg-slate-950/70 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                <Award className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
+                  Score Histórico Global del Cliente
+                </span>
+                <span className="text-xs font-extrabold text-white">
+                  {globalScoreLabel} • {totalHistoricalCuotas} cuotas pagadas / {totalHistoricalPostponements} aplazamientos en BD
+                </span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <span className="text-lg font-black text-emerald-400">{globalScore}%</span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-bold border border-slate-700">
+                {customerLoans.length} crédito(s) registrados
+              </span>
+            </div>
+          </div>
+
           {/* Selector de Préstamos si tiene varios */}
           {customerLoans.length > 1 && (
             <div className="flex items-center gap-2 overflow-x-auto pb-1">
-              <span className="text-xs font-semibold text-slate-400 shrink-0">Préstamo:</span>
+              <span className="text-xs font-semibold text-slate-400 shrink-0">Préstamos:</span>
               {customerLoans.map((l, idx) => (
                 <button
                   key={l.id}
                   onClick={() => setSelectedLoanId(l.id)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition shrink-0 ${
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition shrink-0 flex items-center gap-1.5 ${
                     selectedLoan?.id === l.id
                       ? 'bg-emerald-500 text-slate-950'
+                      : l.estado === 'REFINANCIADO'
+                      ? 'bg-purple-950/60 text-purple-300 border border-purple-800/40 hover:bg-purple-900/60'
                       : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                   }`}
                 >
@@ -424,7 +473,7 @@ export const CustomerPaymentHistoryModal: React.FC<CustomerPaymentHistoryModalPr
         </div>
 
         {/* FOOTER ACTIONS */}
-        <div className="px-6 py-4 border-t border-slate-800 bg-slate-900/90 flex items-center justify-between gap-3">
+        <div className="px-6 py-4 border-t border-slate-800 bg-slate-900/90 flex flex-wrap items-center justify-between gap-3">
           <button
             onClick={onClose}
             className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition"
@@ -432,21 +481,41 @@ export const CustomerPaymentHistoryModal: React.FC<CustomerPaymentHistoryModalPr
             Cerrar Historial
           </button>
 
-          {selectedLoan && selectedLoan.saldo > 0 && onNewPayment && (
-            <button
-              onClick={() => {
-                onClose();
-                onNewPayment(selectedLoan);
-              }}
-              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-extrabold text-xs shadow-lg shadow-emerald-500/20 transition active:scale-95 flex items-center gap-1.5"
-            >
-              <DollarSign className="w-4 h-4" />
-              Cobrar / Registrar Abono
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {selectedLoan && selectedLoan.saldo > 0 && selectedLoan.estado !== 'REFINANCIADO' && (
+              <button
+                onClick={() => setShowRefinanceModal(true)}
+                className="px-4 py-2.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/40 text-xs font-bold transition flex items-center gap-1.5 active:scale-95"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Refinanciar
+              </button>
+            )}
+
+            {selectedLoan && selectedLoan.saldo > 0 && onNewPayment && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onNewPayment(selectedLoan);
+                }}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-extrabold text-xs shadow-lg shadow-emerald-500/20 transition active:scale-95 flex items-center gap-1.5"
+              >
+                <DollarSign className="w-4 h-4" />
+                Cobrar / Registrar Abono
+              </button>
+            )}
+          </div>
         </div>
 
       </div>
+
+      {showRefinanceModal && selectedLoan && (
+        <RefinanceLoanModal
+          loan={selectedLoan}
+          customer={customer}
+          onClose={() => setShowRefinanceModal(false)}
+        />
+      )}
     </div>
   );
 };

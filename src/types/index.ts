@@ -49,7 +49,7 @@ export interface Customer {
 }
 
 export type PaymentFrequency = 'DIARIO' | 'SEMANAL' | 'QUINCENAL' | 'MENSUAL';
-export type LoanStatus = 'PENDIENTE' | 'ACTIVO' | 'PAGADO' | 'EN_MORA';
+export type LoanStatus = 'PENDIENTE' | 'ACTIVO' | 'PAGADO' | 'EN_MORA' | 'REFINANCIADO';
 
 export interface Loan {
   id: string;
@@ -64,6 +64,10 @@ export interface Loan {
   fecha_inicio: string;
   tipo_pago: PaymentFrequency;
   estado: LoanStatus;
+  prestamo_origen_id?: string;
+  es_refinanciacion?: boolean;
+  saldo_refinanciado?: number;
+  motivo_refinanciacion?: string;
   created_at?: string;
   customerName?: string;
   customerPhone?: string;

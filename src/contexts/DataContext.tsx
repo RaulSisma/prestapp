@@ -74,6 +74,20 @@ interface DataContextType {
     registrado_por: string;
   }) => Promise<Postponement>;
 
+  refinanceLoan: (data: {
+    prestamo_anterior_id: string;
+    cliente_id: string;
+    saldo_anterior: number;
+    capital_adicional: number;
+    nuevo_monto: number;
+    interes: number;
+    cuotas_totales: number;
+    tipo_pago: PaymentFrequency;
+    fecha_inicio?: string;
+    observaciones?: string;
+    registrado_por?: string;
+  }) => Promise<Loan>;
+
   getDashboardStats: (currentUserId?: string, role?: 'ADMIN' | 'COBRADOR') => DashboardStats;
   resetDemoData: () => void;
 }
@@ -87,6 +101,11 @@ const STORAGE_KEY_LOANS = 'prestapp_loans_v6';
 const STORAGE_KEY_PAYMENTS = 'prestapp_payments_v6';
 const STORAGE_KEY_ABONOS = 'prestapp_abonos_v2';
 const STORAGE_KEY_POSTPONEMENTS = 'prestapp_postponements_v1';
+
+const isValidUUID = (str?: string | null): boolean => {
+  if (!str) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str.trim());
+};
 
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [users, setUsers] = useState<User[]>(() => 
@@ -194,6 +213,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .select('*')
         .order('fecha', { ascending: false });
       if (!aErr && remoteAbonos) setAbonos(remoteAbonos);
+
+      // 7. Aplazamientos / Incumplimientos
+      const { data: remotePostp, error: postpErr } = await supabase
+        .from('aplazamientos')
+        .select('*')
+        .order('fecha', { ascending: false });
+      if (!postpErr && remotePostp) setPostponements(remotePostp);
 
     } catch (err: unknown) {
       console.warn('Supabase fetch error:', err);
@@ -539,7 +565,123 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     setPostponements(prev => [newPostponement, ...prev]);
+
+    // Validación y sanitización estricta de campos para PostgreSQL
+    const rawUserId = postponementData.registrado_por?.trim();
+    const validRegistradoPor = isValidUUID(rawUserId) ? rawUserId : null;
+
+    const dbPayload: Record<string, unknown> = {
+      id: newPostponement.id,
+      prestamo_id: newPostponement.prestamo_id,
+      cliente_id: newPostponement.cliente_id,
+      fecha: newPostponement.fecha,
+      motivo: newPostponement.motivo,
+      nueva_fecha: newPostponement.nueva_fecha || null,
+      observaciones: newPostponement.observaciones || null,
+      registrado_por: validRegistradoPor
+    };
+
+    try {
+      const { error } = await supabase.from('aplazamientos').insert(dbPayload);
+      if (error) {
+        console.warn('[SUPABASE APLAZAMIENTOS] Error primario al insertar:', error.message, error.code, error.details);
+        
+        // Si falló por Foreign Key en 'registrado_por' (23503), reintentar con NULL
+        if (error.code === '23503' && dbPayload.registrado_por) {
+          console.info('[SUPABASE APLAZAMIENTOS] Reintentando inserción sin registrado_por...');
+          dbPayload.registrado_por = null;
+          const { error: retryError } = await supabase.from('aplazamientos').insert(dbPayload);
+          if (retryError) {
+            console.error('[SUPABASE APLAZAMIENTOS] Falló reintento:', retryError.message);
+          } else {
+            console.log('[SUPABASE APLAZAMIENTOS] Inserción completada con éxito tras reintento.');
+          }
+        }
+      } else {
+        console.log('[SUPABASE APLAZAMIENTOS] Registro insertado exitosamente en BD.');
+      }
+    } catch (err) {
+      console.error('[SUPABASE APLAZAMIENTOS] Excepción inesperada al insertar:', err);
+    }
+
     return newPostponement;
+  };
+
+  const refinanceLoan = async (data: {
+    prestamo_anterior_id: string;
+    cliente_id: string;
+    saldo_anterior: number;
+    capital_adicional: number;
+    nuevo_monto: number;
+    interes: number;
+    cuotas_totales: number;
+    tipo_pago: PaymentFrequency;
+    fecha_inicio?: string;
+    observaciones?: string;
+    registrado_por?: string;
+  }): Promise<Loan> => {
+    const previousLoan = loans.find(l => l.id === data.prestamo_anterior_id);
+    if (!previousLoan) throw new Error('Préstamo anterior no encontrado');
+
+    const monto_total = Math.round(data.nuevo_monto * (1 + data.interes / 100));
+    const valor_cuota = Math.round(monto_total / data.cuotas_totales);
+
+    const newLoan: Loan = {
+      id: crypto.randomUUID(),
+      cliente_id: data.cliente_id,
+      monto: data.nuevo_monto,
+      interes: data.interes,
+      monto_total,
+      saldo: monto_total,
+      cuotas_totales: data.cuotas_totales,
+      cuotas_pagadas: 0,
+      valor_cuota,
+      fecha_inicio: data.fecha_inicio || new Date().toISOString().split('T')[0],
+      tipo_pago: data.tipo_pago,
+      estado: 'ACTIVO',
+      prestamo_origen_id: data.prestamo_anterior_id,
+      es_refinanciacion: true,
+      saldo_refinanciado: data.saldo_anterior,
+      motivo_refinanciacion: data.observaciones || 'Refinanciación de crédito',
+      created_at: new Date().toISOString()
+    };
+
+    setLoans(prev => [
+      newLoan,
+      ...prev.map(l => l.id === data.prestamo_anterior_id ? {
+        ...l,
+        estado: 'REFINANCIADO' as LoanStatus,
+        saldo: 0
+      } : l)
+    ]);
+
+    await safeSupabaseExecute('marcar prestamo refinanciado', () => 
+      supabase.from('prestamos').update({
+        estado: 'REFINANCIADO',
+        saldo: 0
+      }).eq('id', data.prestamo_anterior_id)
+    );
+
+    const dbPayload = {
+      id: newLoan.id,
+      cliente_id: newLoan.cliente_id,
+      monto: newLoan.monto,
+      interes: newLoan.interes,
+      monto_total: newLoan.monto_total,
+      saldo: newLoan.saldo,
+      cuotas_totales: newLoan.cuotas_totales,
+      cuotas_pagadas: 0,
+      valor_cuota: newLoan.valor_cuota,
+      fecha_inicio: newLoan.fecha_inicio,
+      tipo_pago: newLoan.tipo_pago,
+      estado: newLoan.estado
+    };
+
+    await safeSupabaseExecute('insert prestamo refinanciado', () => 
+      supabase.from('prestamos').insert(dbPayload)
+    );
+
+    return newLoan;
   };
 
   const deletePayment = async (paymentId: string): Promise<void> => {
@@ -734,6 +876,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         recordExtraAbono,
         postponements,
         recordPostponement,
+        refinanceLoan,
         getDashboardStats,
         resetDemoData
       }}

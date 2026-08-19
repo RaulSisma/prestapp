@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { 
   DollarSign, Plus, Search, 
-  CheckCircle2, AlertTriangle, Clock 
+  CheckCircle2, AlertTriangle, Clock, RefreshCw 
 } from 'lucide-react';
 import { useData } from '../contexts/DataContext';
 import { useAuth } from '../contexts/AuthContext';
 import { Loan, Customer } from '../types';
 import { LoanModal } from '../components/LoanModal';
 import { PaymentModal } from '../components/PaymentModal';
+import { RefinanceLoanModal } from '../components/RefinanceLoanModal';
 
 export const LoansPage: React.FC = () => {
   const { loans, customers, routes } = useData();
@@ -31,6 +32,10 @@ export const LoansPage: React.FC = () => {
   
   const [showLoanModal, setShowLoanModal] = useState<boolean>(false);
   const [selectedLoanForPayment, setSelectedLoanForPayment] = useState<{
+    loan: Loan;
+    customer: Customer;
+  } | null>(null);
+  const [selectedLoanForRefinance, setSelectedLoanForRefinance] = useState<{
     loan: Loan;
     customer: Customer;
   } | null>(null);
@@ -87,6 +92,7 @@ export const LoansPage: React.FC = () => {
           <option value="TODOS">Todos los Estados</option>
           <option value="ACTIVO">Activos</option>
           <option value="EN_MORA">En Mora</option>
+          <option value="REFINANCIADO">Refinanciados</option>
           <option value="PAGADO">Pagados Completos</option>
         </select>
       </div>
@@ -116,6 +122,11 @@ export const LoansPage: React.FC = () => {
                       <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
                         {route?.nombre || 'Sin Ruta'}
                       </span>
+                      {loan.es_refinanciacion && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-bold border border-purple-500/30">
+                          Crédito Refinanciado
+                        </span>
+                      )}
                     </div>
                     <p className="text-xs text-slate-400 mt-1">
                       Inicio: {loan.fecha_inicio} • Frecuencia: <span className="text-emerald-400 font-semibold">{loan.tipo_pago}</span>
@@ -126,6 +137,10 @@ export const LoansPage: React.FC = () => {
                     {loan.estado === 'PAGADO' ? (
                       <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-bold border border-emerald-500/30 flex items-center gap-1">
                         <CheckCircle2 className="w-3.5 h-3.5" /> Pagado Completo
+                      </span>
+                    ) : loan.estado === 'REFINANCIADO' ? (
+                      <span className="px-3 py-1 rounded-full bg-purple-500/20 text-purple-300 text-xs font-bold border border-purple-500/30 flex items-center gap-1">
+                        <RefreshCw className="w-3.5 h-3.5" /> Refinanciado (Saldo $0)
                       </span>
                     ) : loan.estado === 'EN_MORA' ? (
                       <span className="px-3 py-1 rounded-full bg-red-500/20 text-red-400 text-xs font-bold border border-red-500/30 flex items-center gap-1">
@@ -174,11 +189,19 @@ export const LoansPage: React.FC = () => {
                   </div>
                 </div>
 
-                {loan.estado !== 'PAGADO' && customer && (
-                  <div className="flex justify-end pt-2">
+                {loan.estado !== 'PAGADO' && loan.estado !== 'REFINANCIADO' && customer && (
+                  <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
+                    {loan.saldo > 0 && (
+                      <button
+                        onClick={() => setSelectedLoanForRefinance({ loan, customer })}
+                        className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/40 font-bold text-xs transition active:scale-95"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" /> Refinanciar
+                      </button>
+                    )}
                     <button
                       onClick={() => setSelectedLoanForPayment({ loan, customer })}
-                      className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-xs shadow-md transition active:scale-95"
+                      className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-xs shadow-md transition active:scale-95"
                     >
                       <DollarSign className="w-4 h-4" /> Registrar Pago / Abono
                     </button>
@@ -203,6 +226,14 @@ export const LoansPage: React.FC = () => {
           loan={selectedLoanForPayment.loan}
           customer={selectedLoanForPayment.customer}
           onClose={() => setSelectedLoanForPayment(null)}
+        />
+      )}
+
+      {selectedLoanForRefinance && (
+        <RefinanceLoanModal
+          loan={selectedLoanForRefinance.loan}
+          customer={selectedLoanForRefinance.customer}
+          onClose={() => setSelectedLoanForRefinance(null)}
         />
       )}
 
