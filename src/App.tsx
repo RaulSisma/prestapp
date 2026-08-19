@@ -34,20 +34,43 @@ function App() {
                 <Route 
                   index 
                   element={
-                    <RoleGuard allowedRoles={['ADMIN']}>
+                    <RoleGuard requiredPermission="view_dashboard">
                       <Dashboard />
                     </RoleGuard>
                   } 
                 />
 
-                <Route path="field-route" element={<CollectorRoute />} />
-                <Route path="customers" element={<Customers />} />
-                <Route path="loans" element={<LoansPage />} />
+                <Route 
+                  path="field-route" 
+                  element={
+                    <RoleGuard requiredPermission="view_field_route">
+                      <CollectorRoute />
+                    </RoleGuard>
+                  } 
+                />
+                
+                <Route 
+                  path="customers" 
+                  element={
+                    <RoleGuard requiredPermission="view_customers">
+                      <Customers />
+                    </RoleGuard>
+                  } 
+                />
+                
+                <Route 
+                  path="loans" 
+                  element={
+                    <RoleGuard requiredPermission="view_loans">
+                      <LoansPage />
+                    </RoleGuard>
+                  } 
+                />
 
                 <Route 
                   path="routes" 
                   element={
-                    <RoleGuard allowedRoles={['ADMIN']}>
+                    <RoleGuard requiredPermission="view_routes">
                       <RoutesPage />
                     </RoleGuard>
                   } 
@@ -55,7 +78,7 @@ function App() {
                 <Route 
                   path="users" 
                   element={
-                    <RoleGuard allowedRoles={['ADMIN']}>
+                    <RoleGuard requiredPermission="view_users">
                       <UsersPage />
                     </RoleGuard>
                   } 
@@ -63,7 +86,7 @@ function App() {
                 <Route 
                   path="reports" 
                   element={
-                    <RoleGuard allowedRoles={['ADMIN']}>
+                    <RoleGuard requiredPermission="view_reports">
                       <ReportsPage />
                     </RoleGuard>
                   } 

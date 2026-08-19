@@ -1,17 +1,21 @@
 import React, { useState } from 'react';
 import { 
-  MapPin, Plus, UserCheck, 
+  MapPin, Plus, UserCheck,
   ArrowRightLeft, X, Edit2, Trash2, AlertCircle, CheckCircle
 } from 'lucide-react';
 import { useData } from '../contexts/DataContext';
+import { useAuth } from '../contexts/AuthContext';
 import { Route } from '../types';
 
 export const RoutesPage: React.FC = () => {
   const { routes, users, customers, loans, addRoute, updateRoute, deleteRoute, reassignCustomerRoute } = useData();
+  const { hasPermission } = useAuth();
 
   const [showAddRouteModal, setShowAddRouteModal] = useState<boolean>(false);
   const [editingRoute, setEditingRoute] = useState<Route | null>(null);
   const [showReassignModal, setShowReassignModal] = useState<boolean>(false);
+  const [routeToDelete, setRouteToDelete] = useState<Route | null>(null);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
   const [notification, setNotification] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
   // Form para crear/editar ruta
@@ -65,7 +69,7 @@ export const RoutesPage: React.FC = () => {
     setEditingRoute(null);
   };
 
-  const handleDeleteRoute = async (route: Route) => {
+  const handleDeleteRoute = (route: Route) => {
     const routeClientsCount = customers.filter(c => c.ruta_id === route.id).length;
     if (routeClientsCount > 0) {
       setNotification({
@@ -74,14 +78,25 @@ export const RoutesPage: React.FC = () => {
       });
       return;
     }
+    setRouteToDelete(route);
+  };
 
-    if (window.confirm(`¿Estás seguro de eliminar la ruta "${route.nombre}"?`)) {
-      const result = await deleteRoute(route.id);
+  const handleConfirmDelete = async () => {
+    if (!routeToDelete) return;
+    setIsDeleting(true);
+    try {
+      const target = routeToDelete;
+      const result = await deleteRoute(target.id);
       if (result.success) {
-        setNotification({ type: 'success', text: `Ruta "${route.nombre}" eliminada correctamente.` });
+        setNotification({ type: 'success', text: `Ruta "${target.nombre}" eliminada correctamente.` });
+        setRouteToDelete(null);
       } else {
         setNotification({ type: 'error', text: result.message || 'Error eliminando la ruta.' });
       }
+    } catch {
+      setNotification({ type: 'error', text: 'Error inesperado al eliminar la ruta.' });
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -113,21 +128,25 @@ export const RoutesPage: React.FC = () => {
         </div>
 
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-          <button
-            onClick={() => setShowReassignModal(true)}
-            className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs sm:text-sm border border-slate-700 transition"
-          >
-            <ArrowRightLeft className="w-4 h-4 text-blue-400" />
-            Reasignar Cliente
-          </button>
+          {hasPermission('reassign_routes') && (
+            <button
+              onClick={() => setShowReassignModal(true)}
+              className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs sm:text-sm border border-slate-700 transition"
+            >
+              <ArrowRightLeft className="w-4 h-4 text-blue-400" />
+              Reasignar Cliente
+            </button>
+          )}
 
-          <button
-            onClick={handleOpenAddModal}
-            className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-xs sm:text-sm shadow-lg shadow-emerald-500/20 transition active:scale-95"
-          >
-            <Plus className="w-4 h-4" />
-            Nueva Ruta
-          </button>
+          {hasPermission('manage_routes') && (
+            <button
+              onClick={handleOpenAddModal}
+              className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-xs sm:text-sm shadow-lg shadow-emerald-500/20 transition active:scale-95"
+            >
+              <Plus className="w-4 h-4" />
+              Nueva Ruta
+            </button>
+          )}
         </div>
       </div>
 
@@ -179,24 +198,28 @@ export const RoutesPage: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    onClick={() => handleOpenEditModal(route)}
-                    className="p-2 rounded-xl text-slate-400 hover:text-blue-400 hover:bg-slate-800 transition"
-                    title="Editar Ruta o Reasignar Cobrador"
-                  >
-                    <Edit2 className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => handleDeleteRoute(route)}
-                    className={`p-2 rounded-xl transition ${
-                      hasClients 
-                        ? 'text-slate-600 cursor-not-allowed' 
-                        : 'text-slate-400 hover:text-red-400 hover:bg-slate-800'
-                    }`}
-                    title={hasClients ? 'No se puede eliminar (tiene clientes asignados)' : 'Eliminar Ruta'}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  {(hasPermission('manage_routes') || hasPermission('reassign_routes')) && (
+                    <button
+                      onClick={() => handleOpenEditModal(route)}
+                      className="p-2 rounded-xl text-slate-400 hover:text-blue-400 hover:bg-slate-800 transition"
+                      title="Editar Ruta o Reasignar Cobrador"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                  )}
+                  {hasPermission('delete_routes') && (
+                    <button
+                      onClick={() => handleDeleteRoute(route)}
+                      className={`p-2 rounded-xl transition ${
+                        hasClients 
+                          ? 'text-slate-600 cursor-not-allowed' 
+                          : 'text-slate-400 hover:text-red-400 hover:bg-slate-800'
+                      }`}
+                      title={hasClients ? 'No se puede eliminar (tiene clientes asignados)' : 'Eliminar Ruta'}
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -342,6 +365,43 @@ export const RoutesPage: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CONFIRMAR ELIMINACIÓN DE RUTA */}
+      {routeToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full overflow-hidden shadow-2xl animate-in fade-in zoom-in-95">
+            <div className="p-6 text-center space-y-4">
+              <div className="w-12 h-12 rounded-2xl bg-red-500/20 border border-red-500/30 flex items-center justify-center mx-auto text-red-400">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white">¿Eliminar Ruta?</h3>
+                <p className="text-xs sm:text-sm text-slate-300 mt-1">
+                  Estás a punto de eliminar la ruta <strong className="text-white font-semibold">"{routeToDelete.nombre}"</strong>. Esta acción no se puede deshacer.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={() => setRouteToDelete(null)}
+                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs sm:text-sm font-semibold transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={isDeleting}
+                  onClick={handleConfirmDelete}
+                  className="px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs sm:text-sm font-bold shadow-lg shadow-red-600/25 transition disabled:opacity-50"
+                >
+                  {isDeleting ? 'Eliminando...' : 'Eliminar'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

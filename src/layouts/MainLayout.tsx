@@ -10,7 +10,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { UserProfileModal } from '../components/UserProfileModal';
 
 export const MainLayout: React.FC = () => {
-  const { currentUser, role, logout } = useAuth();
+  const { currentUser, role, hasPermission, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
@@ -25,6 +25,20 @@ export const MainLayout: React.FC = () => {
     logout();
     navigate('/login', { replace: true });
   };
+
+  const getRoleBadgeStyle = (r: string) => {
+    switch (r) {
+      case 'ADMIN':
+        return 'bg-purple-500/20 text-purple-300 border border-purple-500/30';
+      case 'SUPERVISOR':
+        return 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30';
+      case 'COBRADOR':
+      default:
+        return 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+    }
+  };
+
+  const hasAnyAdminOrAuditModule = hasPermission('view_routes') || hasPermission('view_users') || hasPermission('view_reports');
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
@@ -43,7 +57,7 @@ export const MainLayout: React.FC = () => {
           </button>
 
           <div 
-            onClick={() => navigate(role === 'ADMIN' ? '/' : '/field-route')} 
+            onClick={() => navigate(hasPermission('view_dashboard') ? '/' : '/field-route')} 
             className="flex items-center gap-2 cursor-pointer group"
           >
             <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center font-black text-slate-950 text-lg sm:text-xl shadow-md shadow-emerald-500/20 group-hover:scale-105 transition">
@@ -61,9 +75,7 @@ export const MainLayout: React.FC = () => {
           <div className="hidden sm:flex items-center gap-2 bg-slate-800/80 border border-slate-700 px-3 py-1.5 rounded-xl text-xs">
             <Shield className="w-4 h-4 text-emerald-400" />
             <span className="text-white font-bold max-w-[120px] truncate">{currentUser?.nombre}</span>
-            <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-              role === 'ADMIN' ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-            }`}>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${getRoleBadgeStyle(role)}`}>
               {role}
             </span>
           </div>
@@ -103,9 +115,7 @@ export const MainLayout: React.FC = () => {
                 </div>
                 <div className="overflow-hidden">
                   <p className="text-xs font-bold text-white truncate">{currentUser?.nombre}</p>
-                  <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                    role === 'ADMIN' ? 'bg-purple-500/20 text-purple-300' : 'bg-emerald-500/20 text-emerald-300'
-                  }`}>
+                  <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${getRoleBadgeStyle(role)}`}>
                     {role}
                   </span>
                 </div>
@@ -117,7 +127,7 @@ export const MainLayout: React.FC = () => {
                 Menú Principal
               </span>
 
-              {role === 'ADMIN' && (
+              {hasPermission('view_dashboard') && (
                 <NavLink
                   to="/"
                   end
@@ -132,83 +142,95 @@ export const MainLayout: React.FC = () => {
                 </NavLink>
               )}
 
-              <NavLink
-                to="/field-route"
-                className={({ isActive }) =>
-                  `flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition ${
-                    isActive ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-                  }`
-                }
-              >
-                <Smartphone className="w-4 h-4 text-emerald-400" />
-                {role === 'ADMIN' ? 'Cobro en Campo (Ruta)' : 'Mi Recorrido del Día'}
-              </NavLink>
+              {hasPermission('view_field_route') && (
+                <NavLink
+                  to="/field-route"
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition ${
+                      isActive ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                    }`
+                  }
+                >
+                  <Smartphone className="w-4 h-4 text-emerald-400" />
+                  {role === 'ADMIN' ? 'Cobro en Campo (Ruta)' : 'Mi Recorrido del Día'}
+                </NavLink>
+              )}
 
-              <NavLink
-                to="/customers"
-                className={({ isActive }) =>
-                  `flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition ${
-                    isActive ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-                  }`
-                }
-              >
-                <Users className="w-4 h-4" />
-                {role === 'ADMIN' ? 'Clientes' : 'Mis Clientes'}
-              </NavLink>
+              {hasPermission('view_customers') && (
+                <NavLink
+                  to="/customers"
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition ${
+                      isActive ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                    }`
+                  }
+                >
+                  <Users className="w-4 h-4" />
+                  {role === 'ADMIN' ? 'Clientes' : 'Mis Clientes'}
+                </NavLink>
+              )}
 
-              <NavLink
-                to="/loans"
-                className={({ isActive }) =>
-                  `flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition ${
-                    isActive ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-                  }`
-                }
-              >
-                <DollarSign className="w-4 h-4" />
-                {role === 'ADMIN' ? 'Préstamos' : 'Mis Préstamos'}
-              </NavLink>
+              {hasPermission('view_loans') && (
+                <NavLink
+                  to="/loans"
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition ${
+                      isActive ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                    }`
+                  }
+                >
+                  <DollarSign className="w-4 h-4" />
+                  {role === 'ADMIN' ? 'Préstamos' : 'Mis Préstamos'}
+                </NavLink>
+              )}
 
-              {role === 'ADMIN' && (
+              {hasAnyAdminOrAuditModule && (
                 <>
                   <span className="px-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider block pt-4 mb-2">
-                    Administración
+                    {role === 'ADMIN' ? 'Administración' : 'Auditoría y Gestión'}
                   </span>
 
-                  <NavLink
-                    to="/routes"
-                    className={({ isActive }) =>
-                      `flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition ${
-                        isActive ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-                      }`
-                    }
-                  >
-                    <RouteIcon className="w-4 h-4" />
-                    Rutas y Zonas
-                  </NavLink>
+                  {hasPermission('view_routes') && (
+                    <NavLink
+                      to="/routes"
+                      className={({ isActive }) =>
+                        `flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition ${
+                          isActive ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                        }`
+                      }
+                    >
+                      <RouteIcon className="w-4 h-4" />
+                      Rutas y Zonas
+                    </NavLink>
+                  )}
 
-                  <NavLink
-                    to="/users"
-                    className={({ isActive }) =>
-                      `flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition ${
-                        isActive ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-                      }`
-                    }
-                  >
-                    <UserCheck className="w-4 h-4" />
-                    Cobradores
-                  </NavLink>
+                  {hasPermission('view_users') && (
+                    <NavLink
+                      to="/users"
+                      className={({ isActive }) =>
+                        `flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition ${
+                          isActive ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                        }`
+                      }
+                    >
+                      <UserCheck className="w-4 h-4" />
+                      Gestión de Usuarios
+                    </NavLink>
+                  )}
 
-                  <NavLink
-                    to="/reports"
-                    className={({ isActive }) =>
-                      `flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition ${
-                        isActive ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
-                      }`
-                    }
-                  >
-                    <FileText className="w-4 h-4" />
-                    Reportes
-                  </NavLink>
+                  {hasPermission('view_reports') && (
+                    <NavLink
+                      to="/reports"
+                      className={({ isActive }) =>
+                        `flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition ${
+                          isActive ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                        }`
+                      }
+                    >
+                      <FileText className="w-4 h-4" />
+                      Reportes
+                    </NavLink>
+                  )}
                 </>
               )}
             </nav>
@@ -272,10 +294,8 @@ export const MainLayout: React.FC = () => {
                       <p className="text-xs font-extrabold text-white truncate">{currentUser?.nombre}</p>
                       <p className="text-[11px] text-slate-400 truncate">{currentUser?.correo || currentUser?.documento}</p>
                       <div className="mt-1">
-                        <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-                          role === 'ADMIN' ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                        }`}>
-                          {role === 'ADMIN' ? 'ADMINISTRADOR TOTAL' : 'COBRADOR EN RUTA'}
+                        <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-extrabold ${getRoleBadgeStyle(role)}`}>
+                          {role === 'ADMIN' ? 'ADMINISTRADOR TOTAL' : role === 'SUPERVISOR' ? 'SUPERVISOR / AUDITOR' : 'COBRADOR EN RUTA'}
                         </span>
                       </div>
                     </div>
@@ -289,7 +309,7 @@ export const MainLayout: React.FC = () => {
                       Operaciones y Cobranza
                     </span>
                     <div className="space-y-1">
-                      {role === 'ADMIN' && (
+                      {hasPermission('view_dashboard') && (
                         <NavLink
                           to="/"
                           end
@@ -308,109 +328,121 @@ export const MainLayout: React.FC = () => {
                         </NavLink>
                       )}
 
-                      <NavLink
-                        to="/field-route"
-                        onClick={() => setMobileMenuOpen(false)}
-                        className={({ isActive }) =>
-                          `flex items-center justify-between px-3.5 py-2.5 rounded-xl font-semibold text-xs transition ${
-                            isActive ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
-                          }`
-                        }
-                      >
-                        <div className="flex items-center gap-3">
-                          <Smartphone className="w-4 h-4 text-emerald-400" />
-                          <span>Cobro en Campo (Ruta)</span>
-                        </div>
-                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-extrabold">Hoy</span>
-                      </NavLink>
+                      {hasPermission('view_field_route') && (
+                        <NavLink
+                          to="/field-route"
+                          onClick={() => setMobileMenuOpen(false)}
+                          className={({ isActive }) =>
+                            `flex items-center justify-between px-3.5 py-2.5 rounded-xl font-semibold text-xs transition ${
+                              isActive ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                            }`
+                          }
+                        >
+                          <div className="flex items-center gap-3">
+                            <Smartphone className="w-4 h-4 text-emerald-400" />
+                            <span>Cobro en Campo (Ruta)</span>
+                          </div>
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-extrabold">Hoy</span>
+                        </NavLink>
+                      )}
 
-                      <NavLink
-                        to="/customers"
-                        onClick={() => setMobileMenuOpen(false)}
-                        className={({ isActive }) =>
-                          `flex items-center justify-between px-3.5 py-2.5 rounded-xl font-semibold text-xs transition ${
-                            isActive ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
-                          }`
-                        }
-                      >
-                        <div className="flex items-center gap-3">
-                          <Users className="w-4 h-4 text-blue-400" />
-                          <span>Clientes</span>
-                        </div>
-                        <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
-                      </NavLink>
+                      {hasPermission('view_customers') && (
+                        <NavLink
+                          to="/customers"
+                          onClick={() => setMobileMenuOpen(false)}
+                          className={({ isActive }) =>
+                            `flex items-center justify-between px-3.5 py-2.5 rounded-xl font-semibold text-xs transition ${
+                              isActive ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                            }`
+                          }
+                        >
+                          <div className="flex items-center gap-3">
+                            <Users className="w-4 h-4 text-blue-400" />
+                            <span>Clientes</span>
+                          </div>
+                          <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
+                        </NavLink>
+                      )}
 
-                      <NavLink
-                        to="/loans"
-                        onClick={() => setMobileMenuOpen(false)}
-                        className={({ isActive }) =>
-                          `flex items-center justify-between px-3.5 py-2.5 rounded-xl font-semibold text-xs transition ${
-                            isActive ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
-                          }`
-                        }
-                      >
-                        <div className="flex items-center gap-3">
-                          <DollarSign className="w-4 h-4 text-amber-400" />
-                          <span>Préstamos y Cartera</span>
-                        </div>
-                        <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
-                      </NavLink>
+                      {hasPermission('view_loans') && (
+                        <NavLink
+                          to="/loans"
+                          onClick={() => setMobileMenuOpen(false)}
+                          className={({ isActive }) =>
+                            `flex items-center justify-between px-3.5 py-2.5 rounded-xl font-semibold text-xs transition ${
+                              isActive ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                            }`
+                          }
+                        >
+                          <div className="flex items-center gap-3">
+                            <DollarSign className="w-4 h-4 text-amber-400" />
+                            <span>Préstamos y Cartera</span>
+                          </div>
+                          <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
+                        </NavLink>
+                      )}
                     </div>
                   </div>
 
-                  {role === 'ADMIN' && (
+                  {hasAnyAdminOrAuditModule && (
                     <div>
                       <span className="px-3 text-[10px] font-bold text-purple-400 uppercase tracking-wider block mb-1.5 flex items-center gap-1.5">
-                        <Sparkles className="w-3 h-3" /> Módulos de Administración
+                        <Sparkles className="w-3 h-3" /> {role === 'ADMIN' ? 'Módulos de Administración' : 'Auditoría y Gestión'}
                       </span>
                       <div className="space-y-1 bg-purple-950/20 p-1.5 rounded-2xl border border-purple-900/30">
-                        <NavLink
-                          to="/routes"
-                          onClick={() => setMobileMenuOpen(false)}
-                          className={({ isActive }) =>
-                            `flex items-center justify-between px-3.5 py-2.5 rounded-xl font-semibold text-xs transition ${
-                              isActive ? 'bg-purple-600/30 text-purple-200 border border-purple-500/50 font-bold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
-                            }`
-                          }
-                        >
-                          <div className="flex items-center gap-3">
-                            <RouteIcon className="w-4 h-4 text-purple-400" />
-                            <span>Rutas y Zonas</span>
-                          </div>
-                          <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
-                        </NavLink>
+                        {hasPermission('view_routes') && (
+                          <NavLink
+                            to="/routes"
+                            onClick={() => setMobileMenuOpen(false)}
+                            className={({ isActive }) =>
+                              `flex items-center justify-between px-3.5 py-2.5 rounded-xl font-semibold text-xs transition ${
+                                isActive ? 'bg-purple-600/30 text-purple-200 border border-purple-500/50 font-bold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                              }`
+                            }
+                          >
+                            <div className="flex items-center gap-3">
+                              <RouteIcon className="w-4 h-4 text-purple-400" />
+                              <span>Rutas y Zonas</span>
+                            </div>
+                            <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
+                          </NavLink>
+                        )}
 
-                        <NavLink
-                          to="/users"
-                          onClick={() => setMobileMenuOpen(false)}
-                          className={({ isActive }) =>
-                            `flex items-center justify-between px-3.5 py-2.5 rounded-xl font-semibold text-xs transition ${
-                              isActive ? 'bg-purple-600/30 text-purple-200 border border-purple-500/50 font-bold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
-                            }`
-                          }
-                        >
-                          <div className="flex items-center gap-3">
-                            <UserCheck className="w-4 h-4 text-purple-400" />
-                            <span>Cobradores y Usuarios</span>
-                          </div>
-                          <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
-                        </NavLink>
+                        {hasPermission('view_users') && (
+                          <NavLink
+                            to="/users"
+                            onClick={() => setMobileMenuOpen(false)}
+                            className={({ isActive }) =>
+                              `flex items-center justify-between px-3.5 py-2.5 rounded-xl font-semibold text-xs transition ${
+                                isActive ? 'bg-purple-600/30 text-purple-200 border border-purple-500/50 font-bold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                              }`
+                            }
+                          >
+                            <div className="flex items-center gap-3">
+                              <UserCheck className="w-4 h-4 text-purple-400" />
+                              <span>Cobradores y Usuarios</span>
+                            </div>
+                            <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
+                          </NavLink>
+                        )}
 
-                        <NavLink
-                          to="/reports"
-                          onClick={() => setMobileMenuOpen(false)}
-                          className={({ isActive }) =>
-                            `flex items-center justify-between px-3.5 py-2.5 rounded-xl font-semibold text-xs transition ${
-                              isActive ? 'bg-purple-600/30 text-purple-200 border border-purple-500/50 font-bold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
-                            }`
-                          }
-                        >
-                          <div className="flex items-center gap-3">
-                            <FileText className="w-4 h-4 text-purple-400" />
-                            <span>Reportes y Liquidación</span>
-                          </div>
-                          <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
-                        </NavLink>
+                        {hasPermission('view_reports') && (
+                          <NavLink
+                            to="/reports"
+                            onClick={() => setMobileMenuOpen(false)}
+                            className={({ isActive }) =>
+                              `flex items-center justify-between px-3.5 py-2.5 rounded-xl font-semibold text-xs transition ${
+                                isActive ? 'bg-purple-600/30 text-purple-200 border border-purple-500/50 font-bold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                              }`
+                            }
+                          >
+                            <div className="flex items-center gap-3">
+                              <FileText className="w-4 h-4 text-purple-400" />
+                              <span>Reportes y Liquidación</span>
+                            </div>
+                            <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
+                          </NavLink>
+                        )}
                       </div>
                     </div>
                   )}
@@ -460,7 +492,7 @@ export const MainLayout: React.FC = () => {
 
       {/* NAVIGATION BAR MÓVIL (INFERIOR) */}
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 backdrop-blur-xl border-t border-slate-800 px-2 py-1.5 flex justify-around items-center shadow-2xl">
-        {role === 'ADMIN' ? (
+        {hasPermission('view_dashboard') ? (
           <NavLink
             to="/"
             end
@@ -475,41 +507,47 @@ export const MainLayout: React.FC = () => {
           </NavLink>
         ) : null}
 
-        <NavLink
-          to="/field-route"
-          className={({ isActive }) =>
-            `flex flex-col items-center justify-center gap-1 p-2 rounded-xl text-[10px] font-bold transition flex-1 ${
-              isActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400 hover:text-slate-200'
-            }`
-          }
-        >
-          <Smartphone className="w-5 h-5" />
-          <span>Ruta</span>
-        </NavLink>
+        {hasPermission('view_field_route') && (
+          <NavLink
+            to="/field-route"
+            className={({ isActive }) =>
+              `flex flex-col items-center justify-center gap-1 p-2 rounded-xl text-[10px] font-bold transition flex-1 ${
+                isActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400 hover:text-slate-200'
+              }`
+            }
+          >
+            <Smartphone className="w-5 h-5" />
+            <span>Ruta</span>
+          </NavLink>
+        )}
 
-        <NavLink
-          to="/customers"
-          className={({ isActive }) =>
-            `flex flex-col items-center justify-center gap-1 p-2 rounded-xl text-[10px] font-bold transition flex-1 ${
-              isActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400 hover:text-slate-200'
-            }`
-          }
-        >
-          <Users className="w-5 h-5" />
-          <span>Clientes</span>
-        </NavLink>
+        {hasPermission('view_customers') && (
+          <NavLink
+            to="/customers"
+            className={({ isActive }) =>
+              `flex flex-col items-center justify-center gap-1 p-2 rounded-xl text-[10px] font-bold transition flex-1 ${
+                isActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400 hover:text-slate-200'
+              }`
+            }
+          >
+            <Users className="w-5 h-5" />
+            <span>Clientes</span>
+          </NavLink>
+        )}
 
-        <NavLink
-          to="/loans"
-          className={({ isActive }) =>
-            `flex flex-col items-center justify-center gap-1 p-2 rounded-xl text-[10px] font-bold transition flex-1 ${
-              isActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400 hover:text-slate-200'
-            }`
-          }
-        >
-          <DollarSign className="w-5 h-5" />
-          <span>Préstamos</span>
-        </NavLink>
+        {hasPermission('view_loans') && (
+          <NavLink
+            to="/loans"
+            className={({ isActive }) =>
+              `flex flex-col items-center justify-center gap-1 p-2 rounded-xl text-[10px] font-bold transition flex-1 ${
+                isActive ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-400 hover:text-slate-200'
+              }`
+            }
+          >
+            <DollarSign className="w-5 h-5" />
+            <span>Préstamos</span>
+          </NavLink>
+        )}
 
         {/* Botón Más / Menú para desplegar el drawer con módulos de Admin (Rutas, Cobradores, Reportes, etc.) */}
         <button

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { 
   Search, MapPin, Phone, 
   FileText, UserPlus, DollarSign, X, Camera, UploadCloud, Eye,
-  Pencil, Receipt
+  Pencil, Receipt, Trash2, AlertTriangle
 } from 'lucide-react';
 import { useData } from '../contexts/DataContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -12,16 +12,18 @@ import { CustomerPaymentHistoryModal } from '../components/CustomerPaymentHistor
 import { uploadToCloudinary } from '../lib/cloudinary';
 
 export const Customers: React.FC = () => {
-  const { customers, routes, loans, addCustomer, updateCustomer } = useData();
-  const { currentUser, role } = useAuth();
+  const { customers, routes, loans, addCustomer, updateCustomer, deleteCustomer } = useData();
+  const { currentUser, role, hasPermission } = useAuth();
 
-  const allowedRoutes = role === 'ADMIN' 
+  const isGlobalViewer = role === 'ADMIN' || role === 'SUPERVISOR';
+
+  const allowedRoutes = isGlobalViewer 
     ? routes 
     : routes.filter(r => r.usuario_id === currentUser?.id);
 
   const allowedRouteIds = allowedRoutes.map(r => r.id);
 
-  const scopedCustomers = role === 'ADMIN'
+  const scopedCustomers = isGlobalViewer
     ? customers
     : customers.filter(c => allowedRouteIds.includes(c.ruta_id));
 
@@ -33,6 +35,8 @@ export const Customers: React.FC = () => {
   const [showLoanModalForCustomer, setShowLoanModalForCustomer] = useState<Customer | null>(null);
   const [showPaymentHistoryCustomer, setShowPaymentHistoryCustomer] = useState<Customer | null>(null);
   const [viewPhotosCustomer, setViewPhotosCustomer] = useState<Customer | null>(null);
+  const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
   const [formNombre, setFormNombre] = useState<string>('');
   const [formDocumento, setFormDocumento] = useState<string>('');
@@ -161,13 +165,15 @@ export const Customers: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={openNewCustomerForm}
-          className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-3 sm:py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-500/20 transition active:scale-95"
-        >
-          <UserPlus className="w-4 h-4" />
-          Nuevo Cliente
-        </button>
+        {hasPermission('create_customer') && (
+          <button
+            onClick={openNewCustomerForm}
+            className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-3 sm:py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-500/20 transition active:scale-95"
+          >
+            <UserPlus className="w-4 h-4" />
+            Nuevo Cliente
+          </button>
+        )}
       </div>
 
       {/* BARRA BUSCADOR Y FILTROS */}
@@ -235,19 +241,32 @@ export const Customers: React.FC = () => {
                         {customer.alias && (
                           <span className="text-xs text-emerald-400 font-medium block truncate">"{customer.alias}"</span>
                         )}
-                        <button
-                          onClick={() => openEditCustomerForm(customer)}
-                          className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-medium transition border border-slate-700/60"
-                          title="Editar información y fotos del cliente"
-                        >
-                          <Pencil className="w-2.5 h-2.5 text-emerald-400" />
-                          <span>Editar / Fotos</span>
-                        </button>
+                        {hasPermission('edit_customer') && (
+                          <button
+                            onClick={() => openEditCustomerForm(customer)}
+                            className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-medium transition border border-slate-700/60"
+                            title="Editar información y fotos del cliente"
+                          >
+                            <Pencil className="w-2.5 h-2.5 text-emerald-400" />
+                            <span>Editar / Fotos</span>
+                          </button>
+                        )}
                       </div>
                     </div>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700 shrink-0">
-                      {route?.nombre || 'Sin Ruta'}
-                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700">
+                        {route?.nombre || 'Sin Ruta'}
+                      </span>
+                      {hasPermission('delete_customer') && (
+                        <button
+                          onClick={() => setCustomerToDelete(customer)}
+                          className="p-1.5 rounded-xl text-slate-500 hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition active:scale-95"
+                          title="Eliminar Cliente"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="space-y-1.5 text-xs text-slate-300">
@@ -313,12 +332,14 @@ export const Customers: React.FC = () => {
                     <span>Historial de Pagos</span>
                   </button>
 
-                  <button
-                    onClick={() => setShowLoanModalForCustomer(customer)}
-                    className="flex items-center gap-1 px-3 py-2 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 font-semibold text-xs border border-blue-500/30 transition"
-                  >
-                    <DollarSign className="w-3.5 h-3.5" /> Nuevo Préstamo
-                  </button>
+                  {hasPermission('create_loan') && (
+                    <button
+                      onClick={() => setShowLoanModalForCustomer(customer)}
+                      className="flex items-center gap-1 px-3 py-2 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 font-semibold text-xs border border-blue-500/30 transition"
+                    >
+                      <DollarSign className="w-3.5 h-3.5" /> Nuevo Préstamo
+                    </button>
+                  )}
                 </div>
 
               </div>
@@ -621,6 +642,86 @@ export const Customers: React.FC = () => {
             setShowLoanModalForCustomer(showPaymentHistoryCustomer);
           }}
         />
+      )}
+
+      {/* MODAL CONFIRMAR ELIMINACIÓN DE CLIENTE */}
+      {customerToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-5 sm:p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95">
+            <div className="flex items-center gap-3 text-red-400">
+              <div className="w-10 h-10 rounded-2xl bg-red-500/20 border border-red-500/30 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-white text-base sm:text-lg">¿Eliminar Cliente?</h3>
+                <p className="text-xs text-slate-400">Esta acción no se puede deshacer</p>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-400">Nombre:</span>
+                <span className="font-bold text-white">{customerToDelete.nombre}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Teléfono:</span>
+                <span className="text-slate-300 font-mono">{customerToDelete.telefono}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Dirección:</span>
+                <span className="text-slate-300 truncate max-w-[200px]">{customerToDelete.direccion}</span>
+              </div>
+              {(() => {
+                const custLoans = loans.filter(l => l.cliente_id === customerToDelete.id);
+                const activeLoans = custLoans.filter(l => l.saldo > 0);
+                const totalDebt = activeLoans.reduce((sum, l) => sum + l.saldo, 0);
+
+                if (activeLoans.length > 0) {
+                  return (
+                    <div className="mt-2 p-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-300 flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+                      <div>
+                        <strong className="block font-bold">¡Atención!</strong>
+                        El cliente tiene {activeLoans.length} préstamo(s) activo(s) con un saldo total de ${totalDebt.toLocaleString('es-CO')}. Se eliminarán sus créditos y pagos asociados.
+                      </div>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={async () => {
+                  setIsDeleting(true);
+                  try {
+                    await deleteCustomer(customerToDelete.id);
+                    setCustomerToDelete(null);
+                  } catch (err) {
+                    console.error('Error al eliminar cliente:', err);
+                  } finally {
+                    setIsDeleting(false);
+                  }
+                }}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs shadow-lg shadow-red-600/30 transition active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                {isDeleting ? 'Eliminando...' : 'Sí, Eliminar Cliente'}
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setCustomerToDelete(null)}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

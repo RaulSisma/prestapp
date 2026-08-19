@@ -1,4 +1,118 @@
-export type UserRole = 'ADMIN' | 'COBRADOR';
+export type UserRole = 'ADMIN' | 'SUPERVISOR' | 'COBRADOR';
+
+export interface UserPermissions {
+  // A. Acceso a Módulos (Vistas en el Menú)
+  view_dashboard: boolean;
+  view_field_route: boolean;
+  view_customers: boolean;
+  view_loans: boolean;
+  view_routes: boolean;
+  view_users: boolean;
+  view_reports: boolean;
+
+  // B. Permisos de Acción Específica
+  // Clientes
+  create_customer: boolean;
+  edit_customer: boolean;
+  delete_customer: boolean;
+
+  // Préstamos y Pagos
+  create_loan: boolean;
+  edit_loan: boolean;
+  delete_loan: boolean;
+  record_payment: boolean;
+  delete_payment: boolean;
+
+  // Rutas y Reasignaciones
+  manage_routes: boolean;
+  reassign_routes: boolean;
+  delete_routes: boolean;
+}
+
+export const DEFAULT_ADMIN_PERMISSIONS: UserPermissions = {
+  view_dashboard: true,
+  view_field_route: true,
+  view_customers: true,
+  view_loans: true,
+  view_routes: true,
+  view_users: true,
+  view_reports: true,
+
+  create_customer: true,
+  edit_customer: true,
+  delete_customer: true,
+
+  create_loan: true,
+  edit_loan: true,
+  delete_loan: true,
+  record_payment: true,
+  delete_payment: true,
+
+  manage_routes: true,
+  reassign_routes: true,
+  delete_routes: true,
+};
+
+export const DEFAULT_SUPERVISOR_PERMISSIONS: UserPermissions = {
+  view_dashboard: true,
+  view_field_route: true,
+  view_customers: true,
+  view_loans: true,
+  view_routes: true,
+  view_users: false,
+  view_reports: true,
+
+  create_customer: true,
+  edit_customer: true,
+  delete_customer: false,
+
+  create_loan: true,
+  edit_loan: true,
+  delete_loan: false,
+  record_payment: true,
+  delete_payment: false,
+
+  manage_routes: true,
+  reassign_routes: true,
+  delete_routes: false,
+};
+
+export const DEFAULT_COBRADOR_PERMISSIONS: UserPermissions = {
+  view_dashboard: false,
+  view_field_route: true,
+  view_customers: true,
+  view_loans: true,
+  view_routes: false,
+  view_users: false,
+  view_reports: false,
+
+  create_customer: false,
+  edit_customer: false,
+  delete_customer: false,
+
+  create_loan: false,
+  edit_loan: false,
+  delete_loan: false,
+  record_payment: true,
+  delete_payment: false,
+
+  manage_routes: false,
+  reassign_routes: false,
+  delete_routes: false,
+};
+
+export const getRoleDefaultPermissions = (role: UserRole): UserPermissions => {
+  switch (role) {
+    case 'ADMIN':
+      return { ...DEFAULT_ADMIN_PERMISSIONS };
+    case 'SUPERVISOR':
+      return { ...DEFAULT_SUPERVISOR_PERMISSIONS };
+    case 'COBRADOR':
+      return { ...DEFAULT_COBRADOR_PERMISSIONS };
+    default:
+      return { ...DEFAULT_COBRADOR_PERMISSIONS };
+  }
+};
 
 export interface User {
   id: string;
@@ -7,6 +121,7 @@ export interface User {
   documento: string;
   password?: string;
   rol: UserRole;
+  permisos?: Partial<UserPermissions>;
   telefono?: string;
   activo: boolean;
   created_at?: string;

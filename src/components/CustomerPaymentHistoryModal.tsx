@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { 
   X, CheckCircle2, Clock, Calendar, 
-  DollarSign, TrendingUp, RefreshCw, Award
+  DollarSign, TrendingUp, RefreshCw, Award, Trash2
 } from 'lucide-react';
 import { Customer, Loan } from '../types';
 import { useData } from '../contexts/DataContext';
+import { useAuth } from '../contexts/AuthContext';
 import { RefinanceLoanModal } from './RefinanceLoanModal';
 
 interface CustomerPaymentHistoryModalProps {
@@ -18,8 +19,25 @@ export const CustomerPaymentHistoryModal: React.FC<CustomerPaymentHistoryModalPr
   onClose,
   onNewPayment
 }) => {
-  const { loans, payments, postponements, routes, users } = useData();
+  const { loans, payments, postponements, routes, users, deletePayment, deleteLoan } = useData();
+  const { hasPermission } = useAuth();
   const [showRefinanceModal, setShowRefinanceModal] = useState<boolean>(false);
+  const [deletingPaymentId, setDeletingPaymentId] = useState<string | null>(null);
+  const [isDeletingCurrentLoan, setIsDeletingCurrentLoan] = useState<boolean>(false);
+
+  const handleDeletePayment = async (paymentId: string) => {
+    if (!window.confirm('¿Estás seguro de anular este pago? El saldo del préstamo será recalculado automáticamente.')) {
+      return;
+    }
+    setDeletingPaymentId(paymentId);
+    try {
+      await deletePayment(paymentId);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setDeletingPaymentId(null);
+    }
+  };
 
   const customerLoans = loans.filter(l => l.cliente_id === customer.id);
   const [selectedLoanId, setSelectedLoanId] = useState<string>(
@@ -369,6 +387,9 @@ export const CustomerPaymentHistoryModal: React.FC<CustomerPaymentHistoryModalPr
                             <th className="py-2.5 px-3">Método</th>
                             <th className="py-2.5 px-3">Cobrador</th>
                             <th className="py-2.5 px-3">Saldo Restante</th>
+                            {hasPermission('delete_payment') && (
+                              <th className="py-2.5 px-3 text-right">Acción</th>
+                            )}
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-800/60 text-slate-200">
@@ -404,6 +425,18 @@ export const CustomerPaymentHistoryModal: React.FC<CustomerPaymentHistoryModalPr
                                 <td className="py-2.5 px-3 font-semibold text-slate-300">
                                   ${(p.loanBalanceAfter !== undefined ? p.loanBalanceAfter : 0).toLocaleString('es-CO')}
                                 </td>
+                                {hasPermission('delete_payment') && (
+                                  <td className="py-2.5 px-3 text-right">
+                                    <button
+                                      onClick={() => handleDeletePayment(p.id)}
+                                      disabled={deletingPaymentId === p.id}
+                                      className="p-1 rounded-lg text-slate-500 hover:text-red-400 hover:bg-slate-800 transition"
+                                      title="Anular / Eliminar Pago"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </td>
+                                )}
                               </tr>
                             );
                           })}
@@ -474,15 +507,45 @@ export const CustomerPaymentHistoryModal: React.FC<CustomerPaymentHistoryModalPr
 
         {/* FOOTER ACTIONS */}
         <div className="px-6 py-4 border-t border-slate-800 bg-slate-900/90 flex flex-wrap items-center justify-between gap-3">
-          <button
-            onClick={onClose}
-            className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition"
-          >
-            Cerrar Historial
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onClose}
+              className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold transition"
+            >
+              Cerrar Historial
+            </button>
+
+            {selectedLoan && hasPermission('delete_loan') && (
+              <button
+                disabled={isDeletingCurrentLoan}
+                onClick={async () => {
+                  if (!window.confirm(`¿Deseas eliminar este préstamo de $${selectedLoan.monto.toLocaleString('es-CO')} y todos sus pagos asociados?`)) return;
+                  setIsDeletingCurrentLoan(true);
+                  try {
+                    await deleteLoan(selectedLoan.id);
+                    if (customerLoans.length <= 1) {
+                      onClose();
+                    } else {
+                      const otherLoan = customerLoans.find(l => l.id !== selectedLoan.id);
+                      if (otherLoan) setSelectedLoanId(otherLoan.id);
+                    }
+                  } catch (err) {
+                    console.error('Error al eliminar préstamo:', err);
+                  } finally {
+                    setIsDeletingCurrentLoan(false);
+                  }
+                }}
+                className="px-3 py-2.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 text-xs font-bold transition flex items-center gap-1.5 active:scale-95 disabled:opacity-50"
+                title="Eliminar este préstamo y sus pagos"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{isDeletingCurrentLoan ? 'Eliminando...' : 'Eliminar Préstamo'}</span>
+              </button>
+            )}
+          </div>
 
           <div className="flex items-center gap-2">
-            {selectedLoan && selectedLoan.saldo > 0 && selectedLoan.estado !== 'REFINANCIADO' && (
+            {selectedLoan && selectedLoan.saldo > 0 && selectedLoan.estado !== 'REFINANCIADO' && hasPermission('edit_loan') && (
               <button
                 onClick={() => setShowRefinanceModal(true)}
                 className="px-4 py-2.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/40 text-xs font-bold transition flex items-center gap-1.5 active:scale-95"
@@ -492,7 +555,7 @@ export const CustomerPaymentHistoryModal: React.FC<CustomerPaymentHistoryModalPr
               </button>
             )}
 
-            {selectedLoan && selectedLoan.saldo > 0 && onNewPayment && (
+            {selectedLoan && selectedLoan.saldo > 0 && onNewPayment && hasPermission('record_payment') && (
               <button
                 onClick={() => {
                   onClose();

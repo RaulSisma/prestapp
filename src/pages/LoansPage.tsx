@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   DollarSign, Plus, Search, 
-  CheckCircle2, AlertTriangle, Clock, RefreshCw 
+  CheckCircle2, AlertTriangle, Clock, RefreshCw, Trash2
 } from 'lucide-react';
 import { useData } from '../contexts/DataContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -11,11 +11,12 @@ import { PaymentModal } from '../components/PaymentModal';
 import { RefinanceLoanModal } from '../components/RefinanceLoanModal';
 
 export const LoansPage: React.FC = () => {
-  const { loans, customers, routes } = useData();
-  const { currentUser, role } = useAuth();
+  const { loans, customers, routes, deleteLoan } = useData();
+  const { currentUser, role, hasPermission } = useAuth();
 
-  // Filtrar clientes permitidos según el rol del cobrador
-  const allowedRoutes = role === 'ADMIN' 
+  // Filtrar clientes permitidos según el rol del usuario
+  const isGlobalViewer = role === 'ADMIN' || role === 'SUPERVISOR';
+  const allowedRoutes = isGlobalViewer 
     ? routes 
     : routes.filter(r => r.usuario_id === currentUser?.id);
   const allowedRouteIds = allowedRoutes.map(r => r.id);
@@ -23,7 +24,7 @@ export const LoansPage: React.FC = () => {
     .filter(c => allowedRouteIds.includes(c.ruta_id))
     .map(c => c.id);
 
-  const scopedLoans = role === 'ADMIN'
+  const scopedLoans = isGlobalViewer
     ? loans
     : loans.filter(l => allowedCustomerIds.includes(l.cliente_id));
 
@@ -39,6 +40,11 @@ export const LoansPage: React.FC = () => {
     loan: Loan;
     customer: Customer;
   } | null>(null);
+  const [loanToDelete, setLoanToDelete] = useState<{
+    loan: Loan;
+    customer?: Customer;
+  } | null>(null);
+  const [isDeletingLoan, setIsDeletingLoan] = useState<boolean>(false);
 
   const filteredLoans = scopedLoans.filter(loan => {
     const customer = customers.find(c => c.id === loan.cliente_id);
@@ -63,13 +69,15 @@ export const LoansPage: React.FC = () => {
           </p>
         </div>
 
-        <button
-          onClick={() => setShowLoanModal(true)}
-          className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-3 sm:py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-500/20 transition active:scale-95"
-        >
-          <Plus className="w-4 h-4" />
-          Nuevo Préstamo
-        </button>
+        {hasPermission('create_loan') && (
+          <button
+            onClick={() => setShowLoanModal(true)}
+            className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-3 sm:py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-sm shadow-lg shadow-emerald-500/20 transition active:scale-95"
+          >
+            <Plus className="w-4 h-4" />
+            Nuevo Préstamo
+          </button>
+        )}
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3">
@@ -133,7 +141,7 @@ export const LoansPage: React.FC = () => {
                     </p>
                   </div>
 
-                  <div>
+                  <div className="flex items-center gap-2">
                     {loan.estado === 'PAGADO' ? (
                       <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-bold border border-emerald-500/30 flex items-center gap-1">
                         <CheckCircle2 className="w-3.5 h-3.5" /> Pagado Completo
@@ -150,6 +158,16 @@ export const LoansPage: React.FC = () => {
                       <span className="px-3 py-1 rounded-full bg-blue-500/20 text-blue-400 text-xs font-bold border border-blue-500/30 flex items-center gap-1">
                         <Clock className="w-3.5 h-3.5" /> Activo
                       </span>
+                    )}
+
+                    {hasPermission('delete_loan') && (
+                      <button
+                        onClick={() => setLoanToDelete({ loan, customer })}
+                        className="p-1.5 rounded-xl text-slate-500 hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition active:scale-95"
+                        title="Eliminar Préstamo"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     )}
                   </div>
                 </div>
@@ -191,7 +209,7 @@ export const LoansPage: React.FC = () => {
 
                 {loan.estado !== 'PAGADO' && loan.estado !== 'REFINANCIADO' && customer && (
                   <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
-                    {loan.saldo > 0 && (
+                    {loan.saldo > 0 && hasPermission('edit_loan') && (
                       <button
                         onClick={() => setSelectedLoanForRefinance({ loan, customer })}
                         className="flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/40 font-bold text-xs transition active:scale-95"
@@ -199,12 +217,14 @@ export const LoansPage: React.FC = () => {
                         <RefreshCw className="w-3.5 h-3.5" /> Refinanciar
                       </button>
                     )}
-                    <button
-                      onClick={() => setSelectedLoanForPayment({ loan, customer })}
-                      className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-xs shadow-md transition active:scale-95"
-                    >
-                      <DollarSign className="w-4 h-4" /> Registrar Pago / Abono
-                    </button>
+                    {hasPermission('record_payment') && (
+                      <button
+                        onClick={() => setSelectedLoanForPayment({ loan, customer })}
+                        className="flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-xs shadow-md transition active:scale-95"
+                      >
+                        <DollarSign className="w-4 h-4" /> Registrar Pago / Abono
+                      </button>
+                    )}
                   </div>
                 )}
 
@@ -235,6 +255,72 @@ export const LoansPage: React.FC = () => {
           customer={selectedLoanForRefinance.customer}
           onClose={() => setSelectedLoanForRefinance(null)}
         />
+      )}
+
+      {/* MODAL CONFIRMAR ELIMINACIÓN DE PRÉSTAMO */}
+      {loanToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-5 sm:p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95">
+            <div className="flex items-center gap-3 text-red-400">
+              <div className="w-10 h-10 rounded-2xl bg-red-500/20 border border-red-500/30 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-white text-base sm:text-lg">¿Eliminar Préstamo?</h3>
+                <p className="text-xs text-slate-400">Se anulará el crédito y todos sus pagos registrados</p>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-slate-400">Cliente:</span>
+                <span className="font-bold text-white">{loanToDelete.customer?.nombre || 'Cliente'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Monto Inicial:</span>
+                <span className="text-slate-200 font-bold">${loanToDelete.loan.monto.toLocaleString('es-CO')}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Saldo Pendiente:</span>
+                <span className="text-red-400 font-extrabold">${loanToDelete.loan.saldo.toLocaleString('es-CO')}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-400">Cuotas Pagadas:</span>
+                <span className="text-emerald-400 font-bold">{loanToDelete.loan.cuotas_pagadas} de {loanToDelete.loan.cuotas_totales}</span>
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                disabled={isDeletingLoan}
+                onClick={async () => {
+                  setIsDeletingLoan(true);
+                  try {
+                    await deleteLoan(loanToDelete.loan.id);
+                    setLoanToDelete(null);
+                  } catch (err) {
+                    console.error('Error al eliminar préstamo:', err);
+                  } finally {
+                    setIsDeletingLoan(false);
+                  }
+                }}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs shadow-lg shadow-red-600/30 transition active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                {isDeletingLoan ? 'Eliminando...' : 'Sí, Eliminar Préstamo'}
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingLoan}
+                onClick={() => setLoanToDelete(null)}
+                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

