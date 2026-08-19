@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Mail, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 export const LoginPage: React.FC = () => {
@@ -11,27 +11,36 @@ export const LoginPage: React.FC = () => {
   const [password, setPassword] = useState<string>('');
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string>('');
+  const [successMsg, setSuccessMsg] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleLoginSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setErrorMsg('');
+    setSuccessMsg('');
+
     if (!correo || !password) {
-      setErrorMsg('Por favor completa todos los campos.');
+      setErrorMsg('Por favor completa tu correo y la contraseña.');
       return;
     }
 
     setIsSubmitting(true);
-    const result = login(correo, password);
+    try {
+      const result = await login(correo, password);
 
-    if (result.success && result.user) {
-      if (result.user.rol === 'ADMIN') {
-        navigate('/', { replace: true });
+      if (result.success && result.user) {
+        if (result.user.rol === 'ADMIN') {
+          navigate('/', { replace: true });
+        } else {
+          navigate('/field-route', { replace: true });
+        }
       } else {
-        navigate('/field-route', { replace: true });
+        setErrorMsg(result.message || 'Error de autenticación.');
+        setIsSubmitting(false);
       }
-    } else {
-      setErrorMsg(result.message || 'Error de autenticación.');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Ocurrió un error al iniciar sesión.';
+      setErrorMsg(msg);
       setIsSubmitting(false);
     }
   };
@@ -44,6 +53,7 @@ export const LoginPage: React.FC = () => {
 
       <div className="max-w-md w-full glass-panel p-8 rounded-3xl border border-slate-800 shadow-2xl relative z-10 space-y-6 animate-in fade-in zoom-in-95 duration-200">
         
+        {/* Header App Info */}
         <div className="text-center space-y-2">
           <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center font-black text-slate-950 text-3xl shadow-lg shadow-emerald-500/25">
             P
@@ -54,6 +64,7 @@ export const LoginPage: React.FC = () => {
           </p>
         </div>
 
+        {/* Success or Error banners */}
         {errorMsg && (
           <div className="p-4 rounded-2xl bg-red-950/70 border border-red-800/80 text-red-300 text-xs flex items-center gap-2.5">
             <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
@@ -61,18 +72,25 @@ export const LoginPage: React.FC = () => {
           </div>
         )}
 
-        <form onSubmit={handleLoginSubmit} className="space-y-4">
+        {successMsg && (
+          <div className="p-4 rounded-2xl bg-emerald-950/70 border border-emerald-800/80 text-emerald-300 text-xs flex items-center gap-2.5">
+            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+            <span>{successMsg}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleLoginSubmit} className="space-y-4 pt-2">
           
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5 uppercase tracking-wider">
-              Correo Electrónico
+              Tu Email o Correo Electrónico
             </label>
             <div className="relative">
               <Mail className="w-5 h-5 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
-                type="email"
+                type="text"
                 required
-                placeholder="ingresa@tucorreo.com"
+                placeholder="correo@ejemplo.com"
                 value={correo}
                 onChange={(e) => setCorreo(e.target.value)}
                 className="w-full pl-11 pr-4 py-3 bg-slate-900 border border-slate-700/80 rounded-2xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition"
@@ -82,7 +100,7 @@ export const LoginPage: React.FC = () => {
 
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1.5 uppercase tracking-wider">
-              Contraseña / N° Cédula
+              Contraseña
             </label>
             <div className="relative">
               <Lock className="w-5 h-5 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -108,9 +126,16 @@ export const LoginPage: React.FC = () => {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-base shadow-lg shadow-emerald-500/20 transition active:scale-95 disabled:opacity-50"
+              className="w-full py-3.5 px-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-bold text-base shadow-lg shadow-emerald-500/20 transition active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
             >
-              {isSubmitting ? 'Iniciando Sesión...' : 'Ingresar al Sistema'}
+              {isSubmitting ? (
+                <>
+                  <RefreshCw className="w-5 h-5 animate-spin" />
+                  <span>Iniciando sesión...</span>
+                </>
+              ) : (
+                <span>Ingresar al Sistema</span>
+              )}
             </button>
           </div>
 
@@ -127,3 +152,4 @@ export const LoginPage: React.FC = () => {
 };
 
 export default LoginPage;
+

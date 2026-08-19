@@ -1,0 +1,6 @@
+{
+  "name": "PRESTAPP - Gestión de Préstamos y Rutas",
+  "description": "Sistema administrativo y de campo para gestión de préstamos, cobros diarios, clientes y sincronización con base de datos.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

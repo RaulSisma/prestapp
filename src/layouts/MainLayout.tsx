@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
+
 import { UserProfileModal } from '../components/UserProfileModal';
 
 export const MainLayout: React.FC = () => {
@@ -56,9 +57,7 @@ export const MainLayout: React.FC = () => {
           </div>
         </div>
 
-        {/* ROLE SWITCHER & ACTIONS */}
         <div className="flex items-center gap-2 sm:gap-3">
-          
           {/* Badge Usuario Activo */}
           <div className="hidden sm:flex items-center gap-2 bg-slate-800/80 border border-slate-700 px-3 py-1.5 rounded-xl text-xs">
             <Shield className="w-4 h-4 text-emerald-400" />
@@ -99,7 +98,6 @@ export const MainLayout: React.FC = () => {
             <RotateCcw className="w-4 h-4" />
           </button>
         </div>
-
       </header>
 
       <div className="flex-1 flex overflow-hidden">

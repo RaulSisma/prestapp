@@ -5,6 +5,37 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PRESTAPP - Sistema de Gestión Financiera y Cobranza</title>
+    <script>
+      // Defensively handle environments where window.fetch has only a getter
+      (function() {
+        try {
+          if (typeof window !== 'undefined') {
+            var desc = Object.getOwnPropertyDescriptor(window, 'fetch');
+            if (desc && !desc.set && desc.configurable) {
+              var orig = window.fetch;
+              Object.defineProperty(window, 'fetch', {
+                get: function() { return orig; },
+                set: function() {},
+                configurable: true,
+                enumerable: true
+              });
+            }
+            if (typeof Window !== 'undefined' && Window.prototype) {
+              var pDesc = Object.getOwnPropertyDescriptor(Window.prototype, 'fetch');
+              if (pDesc && !pDesc.set && pDesc.configurable) {
+                var pOrig = Window.prototype.fetch;
+                Object.defineProperty(Window.prototype, 'fetch', {
+                  get: function() { return pOrig; },
+                  set: function() {},
+                  configurable: true,
+                  enumerable: true
+                });
+              }
+            }
+          }
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body class="bg-slate-950 text-slate-100 antialiased">
     <div id="root"></div>

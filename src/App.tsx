@@ -12,67 +12,70 @@ import { DataProvider } from './contexts/DataContext';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { RoleGuard } from './components/RoleGuard';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 function App() {
   return (
-    <DataProvider>
-      <AuthProvider>
-        <BrowserRouter>
-          <Routes>
-            <Route path="/login" element={<LoginPage />} />
-
-            <Route 
-              path="/" 
-              element={
-                <ProtectedRoute>
-                  <MainLayout />
-                </ProtectedRoute>
-              }
-            >
-              <Route 
-                index 
-                element={
-                  <RoleGuard allowedRoles={['ADMIN']}>
-                    <Dashboard />
-                  </RoleGuard>
-                } 
-              />
-
-              <Route path="field-route" element={<CollectorRoute />} />
-              <Route path="customers" element={<Customers />} />
-              <Route path="loans" element={<LoansPage />} />
+    <ErrorBoundary>
+      <DataProvider>
+        <AuthProvider>
+          <BrowserRouter>
+            <Routes>
+              <Route path="/login" element={<LoginPage />} />
 
               <Route 
-                path="routes" 
+                path="/" 
                 element={
-                  <RoleGuard allowedRoles={['ADMIN']}>
-                    <RoutesPage />
-                  </RoleGuard>
-                } 
-              />
-              <Route 
-                path="users" 
-                element={
-                  <RoleGuard allowedRoles={['ADMIN']}>
-                    <UsersPage />
-                  </RoleGuard>
-                } 
-              />
-              <Route 
-                path="reports" 
-                element={
-                  <RoleGuard allowedRoles={['ADMIN']}>
-                    <ReportsPage />
-                  </RoleGuard>
-                } 
-              />
-            </Route>
-            
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </BrowserRouter>
-      </AuthProvider>
-    </DataProvider>
+                  <ProtectedRoute>
+                    <MainLayout />
+                  </ProtectedRoute>
+                }
+              >
+                <Route 
+                  index 
+                  element={
+                    <RoleGuard allowedRoles={['ADMIN']}>
+                      <Dashboard />
+                    </RoleGuard>
+                  } 
+                />
+
+                <Route path="field-route" element={<CollectorRoute />} />
+                <Route path="customers" element={<Customers />} />
+                <Route path="loans" element={<LoansPage />} />
+
+                <Route 
+                  path="routes" 
+                  element={
+                    <RoleGuard allowedRoles={['ADMIN']}>
+                      <RoutesPage />
+                    </RoleGuard>
+                  } 
+                />
+                <Route 
+                  path="users" 
+                  element={
+                    <RoleGuard allowedRoles={['ADMIN']}>
+                      <UsersPage />
+                    </RoleGuard>
+                  } 
+                />
+                <Route 
+                  path="reports" 
+                  element={
+                    <RoleGuard allowedRoles={['ADMIN']}>
+                      <ReportsPage />
+                    </RoleGuard>
+                  } 
+                />
+              </Route>
+              
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </BrowserRouter>
+        </AuthProvider>
+      </DataProvider>
+    </ErrorBoundary>
   );
 }
 

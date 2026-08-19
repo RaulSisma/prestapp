@@ -76,6 +76,7 @@ export interface Loan {
 }
 
 export type PaymentType = 'CUOTA_REGULAR' | 'ABONO_EXTRA';
+export type TransactionMethod = 'EFECTIVO' | 'TRANSFERENCIA';
 
 export interface Payment {
   id: string;
@@ -83,6 +84,7 @@ export interface Payment {
   fecha: string;
   valor: number;
   tipo: PaymentType;
+  metodo_pago?: TransactionMethod;
   num_cuota?: number;
   observaciones?: string;
   registrado_por?: string;
@@ -90,6 +92,18 @@ export interface Payment {
   customerName?: string;
   loanBalanceAfter?: number;
   routeName?: string;
+}
+
+export interface Postponement {
+  id: string;
+  prestamo_id: string;
+  cliente_id: string;
+  fecha: string; // YYYY-MM-DD
+  motivo: string; // 'NO_ESTUVO' | 'PIDIO_PLAZO' | 'SIN_FONDOS' | 'OTRO'
+  nueva_fecha?: string;
+  registrado_por: string;
+  observaciones?: string;
+  created_at?: string;
 }
 
 export interface ExtraAbono {

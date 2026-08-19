@@ -1,11 +1,12 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, UserRole } from '../types';
 import { useData } from './DataContext';
+import { supabase, getActiveSupabaseCredentials } from '../lib/supabase';
 
 interface AuthContextType {
   currentUser: User | null;
   role: UserRole;
-  login: (correo: string, password: string) => { success: boolean; message?: string; user?: User };
+  login: (correo: string, password: string) => Promise<{ success: boolean; message?: string; user?: User }>;
   logout: () => void;
   switchUser: (userId: string) => void;
   isAuthenticated: boolean;
@@ -29,27 +30,74 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [users]);
 
-  const login = (correo: string, password: string): { success: boolean; message?: string; user?: User } => {
-    const cleanEmail = correo.trim().toLowerCase();
-    const found = users.find(u => u.correo.toLowerCase() === cleanEmail);
+  const login = async (correoOrDoc: string, password: string): Promise<{ success: boolean; message?: string; user?: User }> => {
+    const cleanIdentifier = correoOrDoc.trim();
+    const cleanPass = password.trim();
 
-    if (!found) {
-      return { success: false, message: 'El correo electrónico no se encuentra registrado.' };
+    if (!cleanIdentifier || !cleanPass) {
+      return { success: false, message: 'Por favor ingresa tu correo/cédula y contraseña.' };
     }
 
-    if (!found.activo) {
-      return { success: false, message: 'La cuenta de usuario se encuentra inactiva.' };
+    const { isConfigured } = getActiveSupabaseCredentials();
+
+    // 1. Validar directamente en Supabase
+    if (isConfigured) {
+      try {
+        const isEmail = cleanIdentifier.includes('@');
+        let query = supabase.from('usuarios').select('*');
+        
+        if (isEmail) {
+          query = query.ilike('correo', cleanIdentifier.toLowerCase());
+        } else {
+          query = query.eq('documento', cleanIdentifier);
+        }
+
+        const { data: dbUser, error } = await query.maybeSingle();
+
+        if (error) {
+          console.warn('[AUTH] Error consultando usuario en Supabase:', error);
+          if (error.code === '42501' || error.message?.includes('policy') || error.message?.includes('permission')) {
+            return {
+              success: false,
+              message: 'Acceso bloqueado por RLS en Supabase. Ejecuta en tu SQL Editor: "ALTER TABLE usuarios DISABLE ROW LEVEL SECURITY;"'
+            };
+          }
+          return {
+            success: false,
+            message: `Error al verificar en Supabase: ${error.message}`
+          };
+        }
+
+        if (dbUser) {
+          if (!dbUser.activo) {
+            return { success: false, message: 'La cuenta de usuario se encuentra inactiva. Contacta al Administrador.' };
+          }
+          const expectedPass = String(dbUser.password || dbUser.documento || '').trim();
+          if (cleanPass === expectedPass) {
+            setCurrentUser(dbUser);
+            localStorage.setItem(ACTIVE_USER_STORAGE_KEY, dbUser.id);
+            return { success: true, user: dbUser };
+          } else {
+            return { success: false, message: 'Contraseña incorrecta. (Por defecto tu clave es tu número de cédula).' };
+          }
+        } else {
+          return {
+            success: false,
+            message: `El usuario "${cleanIdentifier}" no existe en la tabla usuarios de Supabase. Verifica la ortografía.`
+          };
+        }
+      } catch (err: unknown) {
+        console.warn('[AUTH] Error de red con Supabase:', err);
+        const msg = err instanceof Error ? err.message : String(err);
+        return { success: false, message: `Error de red al consultar Supabase: ${msg}` };
+      }
     }
 
-    // Verificar contraseña (o documento si no se ha cambiado clave)
-    const expectedPass = found.password || found.documento;
-    if (password !== expectedPass) {
-      return { success: false, message: 'Contraseña incorrecta. (Recuerda que la clave inicial es tu N° de cédula)' };
-    }
-
-    setCurrentUser(found);
-    localStorage.setItem(ACTIVE_USER_STORAGE_KEY, found.id);
-    return { success: true, user: found };
+    // Si Supabase no está configurado, informar claramente al usuario
+    return {
+      success: false,
+      message: 'Supabase no está vinculado aún. Haz clic en "Conectar Supabase" para ingresar la URL del proyecto y Anon Key.'
+    };
   };
 
   const logout = () => {
@@ -86,3 +134,4 @@ export const useAuth = () => {
   if (!context) throw new Error('useAuth debe ser usado dentro de un AuthProvider');
   return context;
 };
+

@@ -1,3 +1,21 @@
+// Defensively prevent "Cannot set property fetch of #<Window> which has only a getter"
+try {
+  if (typeof window !== 'undefined') {
+    const desc = Object.getOwnPropertyDescriptor(window, 'fetch');
+    if (desc && !desc.set && desc.configurable) {
+      const orig = window.fetch;
+      Object.defineProperty(window, 'fetch', {
+        get: () => orig,
+        set: () => {},
+        configurable: true,
+        enumerable: true,
+      });
+    }
+  }
+} catch {
+  // Ignore
+}
+
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.tsx'
@@ -8,3 +26,4 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <App />
   </React.StrictMode>,
 )
+

@@ -50,7 +50,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ onClose }) =
       setCurrentPasswordInput('');
       setNewPasswordInput('');
       setConfirmPasswordInput('');
-    } catch (err) {
+    } catch {
       setErrorMsg('Error al actualizar la contraseña.');
     } finally {
       setIsSubmitting(false);

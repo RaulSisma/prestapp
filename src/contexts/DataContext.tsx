@@ -1,9 +1,10 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { 
   User, Route, Customer, Loan, Payment, ExtraAbono, 
-  DashboardStats, PaymentFrequency 
+  DashboardStats, PaymentFrequency, Postponement, TransactionMethod
 } from '../types';
-import { supabase } from '../lib/supabase';
+import { supabase, isSupabaseMocked } from '../lib/supabase';
+import { getSafeLocalStorage, setSafeLocalStorage } from '../lib/safeStorage';
 
 interface DataContextType {
   users: User[];
@@ -12,6 +13,14 @@ interface DataContextType {
   loans: Loan[];
   payments: Payment[];
   abonos: ExtraAbono[];
+  postponements: Postponement[];
+  
+  // Estado de sincronización Supabase
+  isSupabaseConnected: boolean;
+  isSyncing: boolean;
+  syncError: string | null;
+  syncWithSupabase: () => Promise<void>;
+  seedSupabaseDatabase: () => Promise<{ success: boolean; message: string }>;
   
   // Operaciones de Usuario & Contraseña
   addUser: (user: Omit<User, 'id' | 'password'>) => Promise<User>;
@@ -42,6 +51,7 @@ interface DataContextType {
     prestamo_id: string;
     valor: number;
     tipo: 'CUOTA_REGULAR' | 'ABONO_EXTRA';
+    metodo_pago?: TransactionMethod;
     num_cuota?: number;
     observaciones?: string;
     registrado_por: string;
@@ -55,127 +65,191 @@ interface DataContextType {
     observaciones?: string;
   }) => Promise<ExtraAbono>;
 
+  recordPostponement: (postponementData: {
+    prestamo_id: string;
+    cliente_id: string;
+    motivo: string;
+    nueva_fecha?: string;
+    observaciones?: string;
+    registrado_por: string;
+  }) => Promise<Postponement>;
+
   getDashboardStats: (currentUserId?: string, role?: 'ADMIN' | 'COBRADOR') => DashboardStats;
   resetDemoData: () => void;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
 
-const STORAGE_KEY_USERS = 'prestapp_users_v2';
-const STORAGE_KEY_ROUTES = 'prestapp_routes_v1';
-const STORAGE_KEY_CUSTOMERS = 'prestapp_customers_v3';
-const STORAGE_KEY_LOANS = 'prestapp_loans_v5';
-const STORAGE_KEY_PAYMENTS = 'prestapp_payments_v5';
-const STORAGE_KEY_ABONOS = 'prestapp_abonos_v1';
-
-const INITIAL_USERS: User[] = [
-  { id: '11111111-1111-1111-1111-111111111111', nombre: 'Administrador Principal', correo: 'admin@prestapp.com', documento: '1098234567', password: '1098234567', rol: 'ADMIN', telefono: '3001234567', activo: true },
-  { id: '22222222-2222-2222-2222-222222222222', nombre: 'Carlos Cobrador (Norte)', correo: 'carlos@prestapp.com', documento: '80123456', password: '80123456', rol: 'COBRADOR', telefono: '3109876543', activo: true },
-  { id: '33333333-3333-3333-3333-333333333333', nombre: 'Andrés Cobrador (Centro)', correo: 'andres@prestapp.com', documento: '91234567', password: '91234567', rol: 'COBRADOR', telefono: '3205554433', activo: true },
-];
-
-const INITIAL_ROUTES: Route[] = [
-  { id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', nombre: 'Ruta Norte', usuario_id: '22222222-2222-2222-2222-222222222222', descripcion: 'Barrios del sector Norte y Comercial' },
-  { id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', nombre: 'Ruta Centro', usuario_id: '33333333-3333-3333-3333-333333333333', descripcion: 'Zona Centro y Mercado Central' },
-  { id: 'cccccccc-cccc-cccc-cccc-cccccccccccc', nombre: 'Ruta Occidente', usuario_id: '22222222-2222-2222-2222-222222222222', descripcion: 'Sector Residencial Occidente' }
-];
-
-const INITIAL_CUSTOMERS: Customer[] = [
-  { id: 'c1111111-1111-1111-1111-111111111111', ruta_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', nombre: 'Juan Pérez', documento: '1098234567', telefono: '3151112233', direccion: 'Calle 10 # 15-20', barrio: 'La Esperanza', alias: 'Juancho', estado: 'ACTIVO', orden_visita: 1 },
-  { id: 'c2222222-2222-2222-2222-222222222222', ruta_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', nombre: 'María Rodríguez', documento: '52890123', telefono: '3184445566', direccion: 'Carrera 7 # 12-40', barrio: 'Los Alpes', alias: 'Doña María', estado: 'ACTIVO', orden_visita: 2 },
-  { id: 'c3333333-3333-3333-3333-333333333333', ruta_id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', nombre: 'Pedro Gómez', documento: '80123456', telefono: '3127778899', direccion: 'Av. Bolivar # 4-15', barrio: 'Centro', alias: 'Don Pedro', estado: 'ACTIVO', orden_visita: 1 },
-  { id: 'c4444444-4444-4444-4444-444444444444', ruta_id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', nombre: 'Ana Martínez', documento: '39789012', telefono: '3009990011', direccion: 'Calle 5 # 8-30', barrio: 'El Carmen', alias: 'Anita', estado: 'ACTIVO', orden_visita: 2 },
-  { id: 'c5555555-5555-5555-5555-555555555555', ruta_id: 'cccccccc-cccc-cccc-cccc-cccccccccccc', nombre: 'José Vargas', documento: '91234567', telefono: '3112223344', direccion: 'Transversal 14 # 25-10', barrio: 'Occidente Real', alias: 'Chepe', estado: 'ACTIVO', orden_visita: 1 },
-];
-
-const INITIAL_LOANS: Loan[] = [
-  { id: 'p1111111-1111-1111-1111-111111111111', cliente_id: 'c1111111-1111-1111-1111-111111111111', monto: 500000, interes: 20, monto_total: 600000, saldo: 480000, cuotas_totales: 30, cuotas_pagadas: 6, valor_cuota: 20000, fecha_inicio: new Date(Date.now() - 10 * 86400000).toISOString().split('T')[0], tipo_pago: 'DIARIO', estado: 'ACTIVO' },
-  { id: 'p2222222-2222-2222-2222-222222222222', cliente_id: 'c1111111-1111-1111-1111-111111111111', monto: 300000, interes: 20, monto_total: 360000, saldo: 360000, cuotas_totales: 30, cuotas_pagadas: 0, valor_cuota: 12000, fecha_inicio: new Date(Date.now() - 2 * 86400000).toISOString().split('T')[0], tipo_pago: 'DIARIO', estado: 'ACTIVO' },
-  { id: 'p3333333-3333-3333-3333-333333333333', cliente_id: 'c2222222-2222-2222-2222-222222222222', monto: 1000000, interes: 20, monto_total: 1200000, saldo: 1000000, cuotas_totales: 24, cuotas_pagadas: 4, valor_cuota: 50000, fecha_inicio: new Date(Date.now() - 15 * 86400000).toISOString().split('T')[0], tipo_pago: 'DIARIO', estado: 'EN_MORA' },
-  { id: 'p4444444-4444-4444-4444-444444444444', cliente_id: 'c3333333-3333-3333-3333-333333333333', monto: 400000, interes: 20, monto_total: 480000, saldo: 320000, cuotas_totales: 24, cuotas_pagadas: 8, valor_cuota: 20000, fecha_inicio: new Date(Date.now() - 20 * 86400000).toISOString().split('T')[0], tipo_pago: 'DIARIO', estado: 'ACTIVO' },
-  { id: 'p5555555-5555-5555-5555-555555555555', cliente_id: 'c5555555-5555-5555-5555-555555555555', monto: 600000, interes: 20, monto_total: 720000, saldo: 600000, cuotas_totales: 30, cuotas_pagadas: 6, valor_cuota: 24000, fecha_inicio: new Date(Date.now() - 8 * 86400000).toISOString().split('T')[0], tipo_pago: 'DIARIO', estado: 'ACTIVO' },
-];
-
-const INITIAL_PAYMENTS: Payment[] = [
-  { id: 'pay-1', prestamo_id: 'p1111111-1111-1111-1111-111111111111', fecha: new Date().toISOString(), valor: 20000, tipo: 'CUOTA_REGULAR', num_cuota: 6, observaciones: 'Pago puntual día de hoy', registrado_por: '22222222-2222-2222-2222-222222222222', customerName: 'Juan Pérez', loanBalanceAfter: 480000 },
-  { id: 'pay-2', prestamo_id: 'p4444444-4444-4444-4444-444444444444', fecha: new Date().toISOString(), valor: 20000, tipo: 'CUOTA_REGULAR', num_cuota: 8, observaciones: 'Pago completado', registrado_por: '33333333-3333-3333-3333-333333333333', customerName: 'Pedro Gómez', loanBalanceAfter: 320000 }
-];
-
-const INITIAL_ABONOS: ExtraAbono[] = [];
+const STORAGE_KEY_USERS = 'prestapp_users_v3';
+const STORAGE_KEY_ROUTES = 'prestapp_routes_v3';
+const STORAGE_KEY_CUSTOMERS = 'prestapp_customers_v4';
+const STORAGE_KEY_LOANS = 'prestapp_loans_v6';
+const STORAGE_KEY_PAYMENTS = 'prestapp_payments_v6';
+const STORAGE_KEY_ABONOS = 'prestapp_abonos_v2';
+const STORAGE_KEY_POSTPONEMENTS = 'prestapp_postponements_v1';
 
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [users, setUsers] = useState<User[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY_USERS);
-    return saved ? JSON.parse(saved) : INITIAL_USERS;
-  });
+  const [users, setUsers] = useState<User[]>(() => 
+    getSafeLocalStorage<User[]>(STORAGE_KEY_USERS, [])
+  );
 
-  const [routes, setRoutes] = useState<Route[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY_ROUTES);
-    return saved ? JSON.parse(saved) : INITIAL_ROUTES;
-  });
+  const [routes, setRoutes] = useState<Route[]>(() => 
+    getSafeLocalStorage<Route[]>(STORAGE_KEY_ROUTES, [])
+  );
 
-  const [customers, setCustomers] = useState<Customer[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY_CUSTOMERS);
-    return saved ? JSON.parse(saved) : INITIAL_CUSTOMERS;
-  });
+  const [customers, setCustomers] = useState<Customer[]>(() => 
+    getSafeLocalStorage<Customer[]>(STORAGE_KEY_CUSTOMERS, [])
+  );
 
-  const [loans, setLoans] = useState<Loan[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY_LOANS);
-    return saved ? JSON.parse(saved) : INITIAL_LOANS;
-  });
+  const [loans, setLoans] = useState<Loan[]>(() => 
+    getSafeLocalStorage<Loan[]>(STORAGE_KEY_LOANS, [])
+  );
 
-  const [payments, setPayments] = useState<Payment[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY_PAYMENTS);
-    return saved ? JSON.parse(saved) : INITIAL_PAYMENTS;
-  });
+  const [payments, setPayments] = useState<Payment[]>(() => 
+    getSafeLocalStorage<Payment[]>(STORAGE_KEY_PAYMENTS, [])
+  );
 
-  const [abonos, setAbonos] = useState<ExtraAbono[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY_ABONOS);
-    return saved ? JSON.parse(saved) : INITIAL_ABONOS;
-  });
+  const [abonos, setAbonos] = useState<ExtraAbono[]>(() => 
+    getSafeLocalStorage<ExtraAbono[]>(STORAGE_KEY_ABONOS, [])
+  );
 
-  useEffect(() => { localStorage.setItem(STORAGE_KEY_USERS, JSON.stringify(users)); }, [users]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEY_ROUTES, JSON.stringify(routes)); }, [routes]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEY_CUSTOMERS, JSON.stringify(customers)); }, [customers]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEY_LOANS, JSON.stringify(loans)); }, [loans]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEY_PAYMENTS, JSON.stringify(payments)); }, [payments]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEY_ABONOS, JSON.stringify(abonos)); }, [abonos]);
+  const [postponements, setPostponements] = useState<Postponement[]>(() => 
+    getSafeLocalStorage<Postponement[]>(STORAGE_KEY_POSTPONEMENTS, [])
+  );
 
-  useEffect(() => {
-    const fetchSupabaseData = async () => {
-      try {
-        const { data: remoteUsers } = await supabase.from('usuarios').select('*');
-        if (remoteUsers && remoteUsers.length > 0) setUsers(remoteUsers);
+  const [isSupabaseConnected, setIsSupabaseConnected] = useState<boolean>(!isSupabaseMocked);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
-        const { data: remoteRoutes } = await supabase.from('rutas').select('*');
-        if (remoteRoutes && remoteRoutes.length > 0) setRoutes(remoteRoutes);
+  useEffect(() => { setSafeLocalStorage(STORAGE_KEY_USERS, users); }, [users]);
+  useEffect(() => { setSafeLocalStorage(STORAGE_KEY_ROUTES, routes); }, [routes]);
+  useEffect(() => { setSafeLocalStorage(STORAGE_KEY_CUSTOMERS, customers); }, [customers]);
+  useEffect(() => { setSafeLocalStorage(STORAGE_KEY_LOANS, loans); }, [loans]);
+  useEffect(() => { setSafeLocalStorage(STORAGE_KEY_PAYMENTS, payments); }, [payments]);
+  useEffect(() => { setSafeLocalStorage(STORAGE_KEY_ABONOS, abonos); }, [abonos]);
+  useEffect(() => { setSafeLocalStorage(STORAGE_KEY_POSTPONEMENTS, postponements); }, [postponements]);
 
-        const { data: remoteCustomers } = await supabase.from('clientes').select('*');
-        if (remoteCustomers && remoteCustomers.length > 0) setCustomers(remoteCustomers);
-
-        const { data: remoteLoans } = await supabase.from('prestamos').select('*');
-        if (remoteLoans && remoteLoans.length > 0) setLoans(remoteLoans);
-
-        const { data: remotePayments } = await supabase.from('pagos').select('*');
-        if (remotePayments && remotePayments.length > 0) setPayments(remotePayments);
-
-        const { data: remoteAbonos } = await supabase.from('abonos').select('*');
-        if (remoteAbonos && remoteAbonos.length > 0) setAbonos(remoteAbonos);
-      } catch (err) {
-        console.warn('Supabase fetch error, fallback active:', err);
-      }
+  const seedSupabaseDatabase = useCallback(async (): Promise<{ success: boolean; message: string }> => {
+    return { 
+      success: true, 
+      message: 'Base de datos vinculada directamente con Supabase. Puedes registrar usuarios, rutas y clientes desde el panel.' 
     };
-    fetchSupabaseData();
   }, []);
 
+  const fetchSupabaseData = useCallback(async () => {
+    if (isSupabaseMocked) {
+      setIsSupabaseConnected(false);
+      return;
+    }
+    setIsSyncing(true);
+    setSyncError(null);
+    try {
+      // 1. Usuarios
+      const { data: remoteUsers, error: uErr } = await supabase
+        .from('usuarios')
+        .select('*')
+        .order('nombre', { ascending: true });
+
+      if (uErr) {
+        console.warn('[PRESTAPP] No se pudo leer usuarios en Supabase:', uErr);
+        setSyncError(uErr.message);
+        setIsSupabaseConnected(false);
+        return;
+      }
+
+      setIsSupabaseConnected(true);
+      setUsers(remoteUsers || []);
+
+      // 2. Rutas
+      const { data: remoteRoutes, error: rErr } = await supabase
+        .from('rutas')
+        .select('*')
+        .order('nombre', { ascending: true });
+      if (!rErr && remoteRoutes) setRoutes(remoteRoutes);
+
+      // 3. Clientes
+      const { data: remoteCustomers, error: cErr } = await supabase
+        .from('clientes')
+        .select('*')
+        .order('orden_visita', { ascending: true });
+      if (!cErr && remoteCustomers) setCustomers(remoteCustomers);
+
+      // 4. Préstamos
+      const { data: remoteLoans, error: lErr } = await supabase
+        .from('prestamos')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (!lErr && remoteLoans) setLoans(remoteLoans);
+
+      // 5. Pagos
+      const { data: remotePayments, error: pErr } = await supabase
+        .from('pagos')
+        .select('*')
+        .order('fecha', { ascending: false });
+      if (!pErr && remotePayments) setPayments(remotePayments);
+
+      // 6. Abonos
+      const { data: remoteAbonos, error: aErr } = await supabase
+        .from('abonos')
+        .select('*')
+        .order('fecha', { ascending: false });
+      if (!aErr && remoteAbonos) setAbonos(remoteAbonos);
+
+    } catch (err: unknown) {
+      console.warn('Supabase fetch error:', err);
+      const msg = err instanceof Error ? err.message : 'Error de conexión con Supabase';
+      setSyncError(msg);
+      setIsSupabaseConnected(false);
+    } finally {
+      setIsSyncing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSupabaseData();
+
+    const handleConfigChange = () => {
+      fetchSupabaseData();
+    };
+
+    window.addEventListener('prestapp:supabase-config-changed', handleConfigChange);
+    return () => {
+      window.removeEventListener('prestapp:supabase-config-changed', handleConfigChange);
+    };
+  }, [fetchSupabaseData]);
+
+  const syncWithSupabase = async () => {
+    await fetchSupabaseData();
+  };
+
+  const safeSupabaseExecute = async (
+    operationName: string,
+    fn: () => Promise<{ error?: { message?: string } | null }>
+  ) => {
+    if (isSupabaseMocked) return;
+    try {
+      const res = await fn();
+      if (res && res.error) {
+        console.warn(`[PRESTAPP Supabase] (${operationName}):`, res.error?.message || res.error);
+        const errMsg = String(res.error?.message || '');
+        if (errMsg.includes('Failed to fetch') || errMsg.includes('Network request failed') || errMsg.includes('NetworkError')) {
+          setIsSupabaseConnected(false);
+          setSyncError('Supabase no disponible por el momento. Operando en modo local seguro.');
+        }
+      }
+    } catch (err: unknown) {
+      console.warn(`[PRESTAPP Supabase Error] (${operationName}):`, err);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (errMsg.includes('Failed to fetch') || errMsg.includes('Network request failed') || errMsg.includes('NetworkError')) {
+        setIsSupabaseConnected(false);
+        setSyncError('Supabase no disponible por el momento. Operando en modo local seguro.');
+      }
+    }
+  };
+
   const resetDemoData = () => {
-    setUsers(INITIAL_USERS);
-    setRoutes(INITIAL_ROUTES);
-    setCustomers(INITIAL_CUSTOMERS);
-    setLoans(INITIAL_LOANS);
-    setPayments(INITIAL_PAYMENTS);
-    setAbonos(INITIAL_ABONOS);
     localStorage.clear();
+    fetchSupabaseData();
   };
 
   const addUser = async (userData: Omit<User, 'id' | 'password'>): Promise<User> => {
@@ -200,21 +274,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       activo: newUser.activo
     };
 
-    const { error } = await supabase.from('usuarios').insert(dbPayload);
-    if (error) console.error('Supabase usuarios insert error:', error);
+    await safeSupabaseExecute('insert usuario', () => supabase.from('usuarios').insert(dbPayload));
     return newUser;
   };
 
   const updateUser = async (userId: string, data: Partial<User>): Promise<void> => {
     setUsers(prev => prev.map(u => u.id === userId ? { ...u, ...data } : u));
-    const { error } = await supabase.from('usuarios').update(data).eq('id', userId);
-    if (error) console.error('Supabase usuarios update error:', error);
+    await safeSupabaseExecute('update usuario', () => supabase.from('usuarios').update(data).eq('id', userId));
   };
 
   const updateUserPassword = async (userId: string, newPassword: string): Promise<void> => {
     setUsers(prev => prev.map(u => u.id === userId ? { ...u, password: newPassword } : u));
-    const { error } = await supabase.from('usuarios').update({ password: newPassword }).eq('id', userId);
-    if (error) console.error('Supabase update password error:', error);
+    await safeSupabaseExecute('update password', () => supabase.from('usuarios').update({ password: newPassword }).eq('id', userId));
   };
 
   const resetUserPassword = async (userId: string): Promise<string> => {
@@ -240,15 +311,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       usuario_id: newRoute.usuario_id,
       descripcion: newRoute.descripcion
     };
-    const { error } = await supabase.from('rutas').insert(dbPayload);
-    if (error) console.error('Supabase rutas insert error:', error);
+    await safeSupabaseExecute('insert ruta', () => supabase.from('rutas').insert(dbPayload));
     return newRoute;
   };
 
   const updateRoute = async (id: string, data: Partial<Route>): Promise<void> => {
     setRoutes(prev => prev.map(r => r.id === id ? { ...r, ...data } : r));
-    const { error } = await supabase.from('rutas').update(data).eq('id', id);
-    if (error) console.error('Supabase rutas update error:', error);
+    await safeSupabaseExecute('update ruta', () => supabase.from('rutas').update(data).eq('id', id));
   };
 
   const deleteRoute = async (routeId: string): Promise<{ success: boolean; message?: string }> => {
@@ -257,8 +326,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return { success: false, message: 'No se puede eliminar la ruta porque tiene clientes asignados.' };
     }
     setRoutes(prev => prev.filter(r => r.id !== routeId));
-    const { error } = await supabase.from('rutas').delete().eq('id', routeId);
-    if (error) console.error('Supabase rutas delete error:', error);
+    await safeSupabaseExecute('delete ruta', () => supabase.from('rutas').delete().eq('id', routeId));
     return { success: true };
   };
 
@@ -290,8 +358,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       orden_visita: newCustomer.orden_visita
     };
 
-    const { error } = await supabase.from('clientes').insert(dbPayload);
-    if (error) console.error('Supabase clientes insert error:', error);
+    await safeSupabaseExecute('insert cliente', () => supabase.from('clientes').insert(dbPayload));
     return newCustomer;
   };
 
@@ -299,17 +366,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setCustomers(prev => prev.map(c => c.id === id ? { ...c, ...data } : c));
     
     // Filtrar solo propiedades DB
-    const dbData: Record<string, any> = {};
+    const dbData: Record<string, unknown> = {};
     const validKeys = ['ruta_id', 'nombre', 'documento', 'telefono', 'direccion', 'barrio', 'alias', 'foto_url', 'foto_casa', 'foto_cliente', 'foto_documento', 'estado', 'orden_visita'];
     
     Object.keys(data).forEach(key => {
       if (validKeys.includes(key)) {
-        dbData[key] = (data as any)[key];
+        dbData[key] = data[key as keyof Customer];
       }
     });
 
-    const { error } = await supabase.from('clientes').update(dbData).eq('id', id);
-    if (error) console.error('Supabase clientes update error:', error);
+    await safeSupabaseExecute('update cliente', () => supabase.from('clientes').update(dbData).eq('id', id));
   };
 
   const reassignCustomerRoute = async (customerId: string, newRouteId: string): Promise<void> => {
@@ -324,6 +390,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       return c;
     }));
+
+    // Actualizar orden_visita en Supabase para cada cliente
+    orderedCustomerIds.forEach((id, idx) => {
+      safeSupabaseExecute('update orden_visita cliente', () => 
+        supabase.from('clientes').update({ orden_visita: idx + 1 }).eq('id', id)
+      );
+    });
   };
 
   const addLoan = async (loanData: {
@@ -371,8 +444,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       estado: newLoan.estado
     };
 
-    const { error } = await supabase.from('prestamos').insert(dbPayload);
-    if (error) console.error('Supabase prestamos insert error:', error);
+    await safeSupabaseExecute('insert prestamo', () => supabase.from('prestamos').insert(dbPayload));
     return newLoan;
   };
 
@@ -380,6 +452,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     prestamo_id: string;
     valor: number;
     tipo: 'CUOTA_REGULAR' | 'ABONO_EXTRA';
+    metodo_pago?: TransactionMethod;
     num_cuota?: number;
     observaciones?: string;
     registrado_por: string;
@@ -410,6 +483,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       fecha: new Date().toISOString(),
       valor: paymentData.valor,
       tipo: paymentData.tipo,
+      metodo_pago: paymentData.metodo_pago || 'EFECTIVO',
       num_cuota: paymentData.num_cuota || newCuotasPagadas,
       observaciones: paymentData.observaciones || '',
       registrado_por: paymentData.registrado_por,
@@ -433,17 +507,39 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       registrado_por: newPayment.registrado_por
     };
 
-    const { error: payError } = await supabase.from('pagos').insert(dbPayload);
-    if (payError) console.error('Supabase pagos insert error:', payError);
+    await safeSupabaseExecute('insert pago', () => supabase.from('pagos').insert(dbPayload));
 
-    const { error: loanError } = await supabase.from('prestamos').update({
+    await safeSupabaseExecute('update prestamo post pago', () => supabase.from('prestamos').update({
       saldo: newSaldo,
       cuotas_pagadas: newCuotasPagadas,
       estado: newEstado
-    }).eq('id', loan.id);
-    if (loanError) console.error('Supabase prestamos update error:', loanError);
+    }).eq('id', loan.id));
 
     return newPayment;
+  };
+
+  const recordPostponement = async (postponementData: {
+    prestamo_id: string;
+    cliente_id: string;
+    motivo: string;
+    nueva_fecha?: string;
+    observaciones?: string;
+    registrado_por: string;
+  }): Promise<Postponement> => {
+    const newPostponement: Postponement = {
+      id: crypto.randomUUID(),
+      prestamo_id: postponementData.prestamo_id,
+      cliente_id: postponementData.cliente_id,
+      fecha: new Date().toISOString(),
+      motivo: postponementData.motivo,
+      nueva_fecha: postponementData.nueva_fecha,
+      observaciones: postponementData.observaciones || '',
+      registrado_por: postponementData.registrado_por,
+      created_at: new Date().toISOString()
+    };
+
+    setPostponements(prev => [newPostponement, ...prev]);
+    return newPostponement;
   };
 
   const deletePayment = async (paymentId: string): Promise<void> => {
@@ -465,17 +561,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         estado: newEstado
       } : l));
 
-      const { error: loanErr } = await supabase.from('prestamos').update({
+      await safeSupabaseExecute('revert prestamo post delete pago', () => supabase.from('prestamos').update({
         saldo: newSaldo,
         cuotas_pagadas: newCuotasPagadas,
         estado: newEstado
-      }).eq('id', loan.id);
-      if (loanErr) console.error('Supabase prestamos revert error:', loanErr);
+      }).eq('id', loan.id));
     }
 
     setPayments(prev => prev.filter(p => p.id !== paymentId));
-    const { error: payErr } = await supabase.from('pagos').delete().eq('id', paymentId);
-    if (payErr) console.error('Supabase pagos delete error:', payErr);
+    await safeSupabaseExecute('delete pago', () => supabase.from('pagos').delete().eq('id', paymentId));
   };
 
   const recordExtraAbono = async (abonoData: {
@@ -514,14 +608,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       observaciones: newAbono.observaciones
     };
 
-    const { error: abonoError } = await supabase.from('abonos').insert(dbPayload);
-    if (abonoError) console.error('Supabase abonos insert error:', abonoError);
+    await safeSupabaseExecute('insert abono', () => supabase.from('abonos').insert(dbPayload));
 
-    const { error: loanError } = await supabase.from('prestamos').update({
+    await safeSupabaseExecute('update prestamo post abono', () => supabase.from('prestamos').update({
       saldo: newSaldo,
       estado: newEstado
-    }).eq('id', loan.id);
-    if (loanError) console.error('Supabase prestamos update error:', loanError);
+    }).eq('id', loan.id));
 
     return newAbono;
   };
@@ -620,6 +712,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         loans,
         payments,
         abonos,
+        isSupabaseConnected,
+        isSyncing,
+        syncError,
+        syncWithSupabase,
+        seedSupabaseDatabase,
         addUser,
         updateUser,
         updateUserPassword,
@@ -635,6 +732,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         recordPayment,
         deletePayment,
         recordExtraAbono,
+        postponements,
+        recordPostponement,
         getDashboardStats,
         resetDemoData
       }}

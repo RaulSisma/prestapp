@@ -1,5 +1,5 @@
 -- ========================================================
--- PRESTAPP - ESQUEMA DE BASE DE DATOS PARA SUPABASE (v3)
+-- PRESTAPP - ESQUEMA DE BASE DE DATOS PARA SUPABASE (v4)
 -- ========================================================
 
 -- Habilitar extensión UUID
@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS rutas (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- 3. TABLA CLIENTES (Con 3 fotos: casa, cliente, documento)
+-- 3. TABLA CLIENTES (Con soporte para fotos de casa, cliente y documento)
 CREATE TABLE IF NOT EXISTS clientes (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     ruta_id UUID REFERENCES rutas(id) ON DELETE CASCADE,
@@ -86,7 +86,14 @@ CREATE TABLE IF NOT EXISTS abonos (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- POLÍTICAS RLS (Row Level Security) - Permitir lectura y escritura con la ANON KEY
+-- ÍNDICES PARA ALTO RENDIMIENTO
+CREATE INDEX IF NOT EXISTS idx_rutas_usuario ON rutas(usuario_id);
+CREATE INDEX IF NOT EXISTS idx_clientes_ruta ON clientes(ruta_id);
+CREATE INDEX IF NOT EXISTS idx_prestamos_cliente ON prestamos(cliente_id);
+CREATE INDEX IF NOT EXISTS idx_pagos_prestamo ON pagos(prestamo_id);
+CREATE INDEX IF NOT EXISTS idx_abonos_prestamo ON abonos(prestamo_id);
+
+-- POLÍTICAS RLS (Row Level Security)
 ALTER TABLE usuarios ENABLE ROW LEVEL SECURITY;
 ALTER TABLE rutas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE clientes ENABLE ROW LEVEL SECURITY;
@@ -94,35 +101,16 @@ ALTER TABLE prestamos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pagos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE abonos ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Permitir acceso anonimo total a usuarios" ON usuarios FOR ALL USING (true);
-CREATE POLICY "Permitir acceso anonimo total a rutas" ON rutas FOR ALL USING (true);
-CREATE POLICY "Permitir acceso anonimo total a clientes" ON clientes FOR ALL USING (true);
-CREATE POLICY "Permitir acceso anonimo total a prestamos" ON prestamos FOR ALL USING (true);
-CREATE POLICY "Permitir acceso anonimo total a pagos" ON pagos FOR ALL USING (true);
-CREATE POLICY "Permitir acceso anonimo total a abonos" ON abonos FOR ALL USING (true);
+DROP POLICY IF EXISTS "Permitir acceso total a usuarios" ON usuarios;
+DROP POLICY IF EXISTS "Permitir acceso total a rutas" ON rutas;
+DROP POLICY IF EXISTS "Permitir acceso total a clientes" ON clientes;
+DROP POLICY IF EXISTS "Permitir acceso total a prestamos" ON prestamos;
+DROP POLICY IF EXISTS "Permitir acceso total a pagos" ON pagos;
+DROP POLICY IF EXISTS "Permitir acceso total a abonos" ON abonos;
 
--- DATOS SEMILLA
-INSERT INTO usuarios (id, nombre, correo, documento, password, rol, telefono) VALUES
-('11111111-1111-1111-1111-111111111111', 'Administrador Principal', 'admin@prestapp.com', '1098234567', '1098234567', 'ADMIN', '3001234567'),
-('22222222-2222-2222-2222-222222222222', 'Carlos Cobrador (Norte)', 'carlos@prestapp.com', '80123456', '80123456', 'COBRADOR', '3109876543'),
-('33333333-3333-3333-3333-333333333333', 'Andrés Cobrador (Centro)', 'andres@prestapp.com', '91234567', '91234567', 'COBRADOR', '3205554433')
-ON CONFLICT (correo) DO NOTHING;
-
-INSERT INTO rutas (id, nombre, usuario_id, descripcion) VALUES
-('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Ruta Norte', '22222222-2222-2222-2222-222222222222', 'Barrios del sector Norte y Comercial'),
-('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'Ruta Centro', '33333333-3333-3333-3333-333333333333', 'Zona Centro y Mercado Central')
-ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO clientes (id, ruta_id, nombre, documento, telefono, direccion, barrio, alias, estado, orden_visita) VALUES
-('c1111111-1111-1111-1111-111111111111', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Juan Pérez', '1098234567', '3151112233', 'Calle 10 # 15-20', 'La Esperanza', 'Juancho', 'ACTIVO', 1),
-('c2222222-2222-2222-2222-222222222222', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'María Rodríguez', '52890123', '3184445566', 'Carrera 7 # 12-40', 'Los Alpes', 'Doña María', 'ACTIVO', 2),
-('c3333333-3333-3333-3333-333333333333', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'Pedro Gómez', '80123456', '3127778899', 'Av. Bolivar # 4-15', 'Centro', 'Don Pedro', 'ACTIVO', 1),
-('c4444444-4444-4444-4444-444444444444', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'Ana Martínez', '39789012', '3009990011', 'Calle 5 # 8-30', 'El Carmen', 'ACTIVO', 2)
-ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO prestamos (id, cliente_id, monto, interes, monto_total, saldo, cuotas_totales, cuotas_pagadas, valor_cuota, fecha_inicio, tipo_pago, estado) VALUES
-('p1111111-1111-1111-1111-111111111111', 'c1111111-1111-1111-1111-111111111111', 500000, 20, 600000, 480000, 30, 6, 20000, CURRENT_DATE - INTERVAL '10 days', 'DIARIO', 'ACTIVO'),
-('p2222222-2222-2222-2222-222222222222', 'c1111111-1111-1111-1111-111111111111', 300000, 20, 360000, 360000, 30, 0, 12000, CURRENT_DATE - INTERVAL '2 days', 'DIARIO', 'ACTIVO'),
-('p3333333-3333-3333-3333-333333333333', 'c2222222-2222-2222-2222-222222222222', 1000000, 20, 1200000, 1000000, 24, 4, 50000, CURRENT_DATE - INTERVAL '15 days', 'DIARIO', 'EN_MORA'),
-('p4444444-4444-4444-4444-444444444444', 'c3333333-3333-3333-3333-333333333333', 400000, 20, 480000, 320000, 24, 8, 20000, CURRENT_DATE - INTERVAL '20 days', 'DIARIO', 'ACTIVO')
-ON CONFLICT (id) DO NOTHING;
+CREATE POLICY "Permitir acceso total a usuarios" ON usuarios FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Permitir acceso total a rutas" ON rutas FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Permitir acceso total a clientes" ON clientes FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Permitir acceso total a prestamos" ON prestamos FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Permitir acceso total a pagos" ON pagos FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Permitir acceso total a abonos" ON abonos FOR ALL USING (true) WITH CHECK (true);

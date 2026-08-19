@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { 
   Search, MapPin, Phone, 
-  FileText, Edit, UserPlus, DollarSign, X, Camera, UploadCloud, Eye 
+  FileText, UserPlus, DollarSign, X, Camera, UploadCloud, Eye,
+  Pencil, Receipt
 } from 'lucide-react';
 import { useData } from '../contexts/DataContext';
 import { useAuth } from '../contexts/AuthContext';
 import { Customer } from '../types';
 import { LoanModal } from '../components/LoanModal';
+import { CustomerPaymentHistoryModal } from '../components/CustomerPaymentHistoryModal';
 import { uploadToCloudinary } from '../lib/cloudinary';
 
 export const Customers: React.FC = () => {
@@ -29,6 +31,7 @@ export const Customers: React.FC = () => {
   const [showAddCustomerModal, setShowAddCustomerModal] = useState<boolean>(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [showLoanModalForCustomer, setShowLoanModalForCustomer] = useState<Customer | null>(null);
+  const [showPaymentHistoryCustomer, setShowPaymentHistoryCustomer] = useState<Customer | null>(null);
   const [viewPhotosCustomer, setViewPhotosCustomer] = useState<Customer | null>(null);
 
   const [formNombre, setFormNombre] = useState<string>('');
@@ -85,9 +88,11 @@ export const Customers: React.FC = () => {
     setUploading(true);
     try {
       const url = await uploadToCloudinary(file);
-      setPhotoUrl(url);
+      if (url) {
+        setPhotoUrl(url);
+      }
     } catch (err) {
-      alert('Error al subir imagen a Cloudinary. Revisa la consola.');
+      console.warn('Error al procesar imagen:', err);
     } finally {
       setUploading(false);
     }
@@ -230,6 +235,14 @@ export const Customers: React.FC = () => {
                         {customer.alias && (
                           <span className="text-xs text-emerald-400 font-medium block truncate">"{customer.alias}"</span>
                         )}
+                        <button
+                          onClick={() => openEditCustomerForm(customer)}
+                          className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white text-[11px] font-medium transition border border-slate-700/60"
+                          title="Editar información y fotos del cliente"
+                        >
+                          <Pencil className="w-2.5 h-2.5 text-emerald-400" />
+                          <span>Editar / Fotos</span>
+                        </button>
                       </div>
                     </div>
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300 border border-slate-700 shrink-0">
@@ -292,15 +305,17 @@ export const Customers: React.FC = () => {
 
                 <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between gap-2">
                   <button
-                    onClick={() => openEditCustomerForm(customer)}
-                    className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition text-xs flex items-center gap-1"
+                    onClick={() => setShowPaymentHistoryCustomer(customer)}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-emerald-400 hover:text-emerald-300 font-bold text-xs border border-slate-700/80 transition shadow-sm"
+                    title="Historial de abonos, proyección de cuotas e indicador de cumplimiento"
                   >
-                    <Edit className="w-3.5 h-3.5" /> Editar / Fotos
+                    <Receipt className="w-3.5 h-3.5" />
+                    <span>Historial de Pagos</span>
                   </button>
 
                   <button
                     onClick={() => setShowLoanModalForCustomer(customer)}
-                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 font-semibold text-xs border border-blue-500/30 transition"
+                    className="flex items-center gap-1 px-3 py-2 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 font-semibold text-xs border border-blue-500/30 transition"
                   >
                     <DollarSign className="w-3.5 h-3.5" /> Nuevo Préstamo
                   </button>
@@ -595,6 +610,16 @@ export const Customers: React.FC = () => {
         <LoanModal
           customer={showLoanModalForCustomer}
           onClose={() => setShowLoanModalForCustomer(null)}
+        />
+      )}
+
+      {showPaymentHistoryCustomer && (
+        <CustomerPaymentHistoryModal
+          customer={showPaymentHistoryCustomer}
+          onClose={() => setShowPaymentHistoryCustomer(null)}
+          onNewPayment={() => {
+            setShowLoanModalForCustomer(showPaymentHistoryCustomer);
+          }}
         />
       )}
 
