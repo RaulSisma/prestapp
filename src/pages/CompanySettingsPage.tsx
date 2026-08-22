@@ -185,6 +185,20 @@ export const CompanySettingsPage: React.FC = () => {
                       </button>
                     )}
                   </div>
+
+                  {logoUrl && (
+                    <div className="mt-2 text-[11px] text-slate-400 truncate">
+                      {logoUrl.includes('cloudinary.com') ? (
+                        <span className="text-emerald-400 font-medium flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" /> Cloudinary: {logoUrl}
+                        </span>
+                      ) : (
+                        <span className="text-amber-400 font-medium">
+                          ⚠️ Logo local en Base64. Haz clic en "Cambiar Logo" para subirlo a Cloudinary.
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

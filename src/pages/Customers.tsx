@@ -90,14 +90,22 @@ export const Customers: React.FC = () => {
     setPhotoUrl: (url: string) => void, 
     setUploading: (u: boolean) => void
   ) => {
+    if (!file.type.startsWith('image/')) {
+      setNotification({ type: 'error', text: 'Por favor selecciona un archivo de imagen válido.' });
+      return;
+    }
+
     setUploading(true);
     try {
       const url = await uploadToCloudinary(file);
       if (url) {
         setPhotoUrl(url);
+        setNotification({ type: 'success', text: 'Imagen subida a Cloudinary exitosamente.' });
       }
-    } catch (err) {
-      console.warn('Error al procesar imagen:', err);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error al subir imagen a Cloudinary';
+      console.error('[Upload Error]', err);
+      setNotification({ type: 'error', text: msg });
     } finally {
       setUploading(false);
     }

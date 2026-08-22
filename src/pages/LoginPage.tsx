@@ -16,7 +16,7 @@ export const LoginPage: React.FC = () => {
   const [successMsg, setSuccessMsg] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  const appName = companyConfig.nombre || 'PRESTAPP';
+  const appName = companyConfig.nombre || 'RUTAPP';
   const appSlogan = companyConfig.slogan || 'Sistema de Gestión Financiera y Cobranza';
 
   const handleLoginSubmit = async (e?: React.FormEvent) => {
@@ -160,7 +160,7 @@ export const LoginPage: React.FC = () => {
       </div>
 
       <div className="text-xs text-slate-500 mt-6 text-center">
-        PRESTAPP © 2026 • Sistema de Control Financiero
+        RUTAPP © 2026 • Sistema de Control Financiero
       </div>
 
     </div>

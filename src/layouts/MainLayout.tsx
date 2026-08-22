@@ -42,7 +42,7 @@ export const MainLayout: React.FC = () => {
 
   const hasAnyAdminOrAuditModule = hasPermission('view_routes') || hasPermission('view_users') || hasPermission('view_reports') || hasPermission('view_company_settings');
 
-  const appName = companyConfig.nombre || 'PRESTAPP';
+  const appName = companyConfig.nombre || 'RUTAPP';
   const appSlogan = companyConfig.slogan || 'Gestión Financiera';
 
   return (
@@ -291,7 +291,7 @@ export const MainLayout: React.FC = () => {
             </button>
 
             <div className="text-[11px] text-slate-500 text-center border-t border-slate-800 pt-3">
-              PRESTAPP • Supabase Online
+              RUTAPP • Supabase Online
             </div>
           </div>
         </aside>
