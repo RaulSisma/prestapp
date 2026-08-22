@@ -105,7 +105,7 @@ export const RoutesPage: React.FC = () => {
     if (!reassignCustomerId || !reassignNewRouteId) return;
 
     await reassignCustomerRoute(reassignCustomerId, reassignNewRouteId);
-    setNotification({ type: 'success', text: 'Cliente reasignado a la nueva ruta correctamente.' });
+    setNotification({ type: 'success', text: 'Cliente Agregado a nueva Ruta ' });
     setShowReassignModal(false);
     setReassignCustomerId('');
   };

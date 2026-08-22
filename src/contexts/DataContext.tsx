@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { 
   User, Route, Customer, Loan, Payment, ExtraAbono, 
-  DashboardStats, PaymentFrequency, Postponement, TransactionMethod
+  DashboardStats, PaymentFrequency, Postponement, TransactionMethod,
+  CompanyConfig, ExpenseConcept, Expense
 } from '../types';
 import { supabase, isSupabaseMocked } from '../lib/supabase';
 import { getSafeLocalStorage, setSafeLocalStorage } from '../lib/safeStorage';
@@ -15,6 +16,26 @@ interface DataContextType {
   abonos: ExtraAbono[];
   postponements: Postponement[];
   
+  // Configuración de Empresa
+  companyConfig: CompanyConfig;
+  updateCompanyConfig: (data: Partial<CompanyConfig>) => Promise<CompanyConfig>;
+
+  // Gastos & Conceptos
+  expenseConcepts: ExpenseConcept[];
+  expenses: Expense[];
+  addExpenseConcept: (nombre: string) => Promise<ExpenseConcept>;
+  updateExpenseConcept: (id: string, data: Partial<ExpenseConcept>) => Promise<void>;
+  toggleExpenseConceptActive: (id: string) => Promise<void>;
+  deleteExpenseConcept: (id: string) => Promise<{ success: boolean; message?: string }>;
+  addExpense: (data: {
+    concepto_id: string;
+    monto: number;
+    descripcion?: string;
+    fecha?: string;
+    usuario_id?: string;
+  }) => Promise<Expense>;
+  deleteExpense: (expenseId: string) => Promise<{ success: boolean; message?: string }>;
+
   // Estado de sincronización Supabase
   isSupabaseConnected: boolean;
   isSyncing: boolean;
@@ -103,79 +124,217 @@ const STORAGE_KEY_LOANS = 'prestapp_loans_v6';
 const STORAGE_KEY_PAYMENTS = 'prestapp_payments_v6';
 const STORAGE_KEY_ABONOS = 'prestapp_abonos_v2';
 const STORAGE_KEY_POSTPONEMENTS = 'prestapp_postponements_v1';
+const STORAGE_KEY_COMPANY = 'prestapp_company_config_v1';
+const STORAGE_KEY_CONCEPTS = 'prestapp_expense_concepts_v1';
+const STORAGE_KEY_EXPENSES = 'prestapp_expenses_v1';
+const STORAGE_KEY_NOTIFIED_ROUTES = 'prestapp_notified_route_ids_v1';
+
+const DEFAULT_COMPANY_CONFIG: CompanyConfig = {
+  id: 'default_config',
+  nombre: 'PRESTAPP',
+  slogan: 'Manejo Financiero Fácil y Rápido',
+  nit: '900.123.456-7',
+  logo_url: '',
+  updated_at: new Date().toISOString()
+};
+
+const DEFAULT_EXPENSE_CONCEPTS: ExpenseConcept[] = [
+  { id: 'c1', nombre: 'Combustible / Gasolina', activo: true, created_at: new Date().toISOString() },
+  { id: 'c2', nombre: 'Almuerzo / Viáticos', activo: true, created_at: new Date().toISOString() },
+  { id: 'c3', nombre: 'Mantenimiento de Vehículo', activo: true, created_at: new Date().toISOString() },
+  { id: 'c4', nombre: 'Papelería e Impresiones', activo: true, created_at: new Date().toISOString() },
+  { id: 'c5', nombre: 'Servicios / Recargas Móvil', activo: true, created_at: new Date().toISOString() },
+  { id: 'c6', nombre: 'Otros Gastos Operativos', activo: true, created_at: new Date().toISOString() },
+];
+
+const generateExpenseCode = (): string => {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let result = 'GST-';
+  for (let i = 0; i < 6; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+};
 
 const isValidUUID = (str?: string | null): boolean => {
   if (!str) return false;
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str.trim());
 };
 
-const APPS_SCRIPT_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbxnKWxq2gPimuFlWrX1kLlV9e6LazWdqxCJSBOzLjsSkN6cSX1-Z4uOv_hHwg8PeL-n4w/exec';
+const APPS_SCRIPT_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbzQi80iM7sgT3OwmgWpQF-1d67DFq6I0d5aquvgX1L56qfCRnbqk51ZxhLCAIALdC3iQA/exec';
+
+// Bloqueo en memoria para evitar llamadas simultáneas duplicadas
+const inFlightRouteNotifs = new Set<string>();
 
 /**
- * Función oculta y silenciosa para notificar a Google Apps Script cuando se añade
- * el primer cliente a una ruta nueva (clientes previos = 0) y el total de rutas en la BD es mayor a 1.
- * Notifica los nombres de todas las rutas y sus fechas de creación.
+ * Función para registrar en Google Sheets a través de Google Apps Script:
+ * REGLAS ESTRICTAS:
+ * 1. Solo envía si total_rutas > 1 (la primera ruta es gratuita).
+ * 2. Solo envía UNA SOLA VEZ cuando se agrega el PRIMER cliente a una nueva ruta creada (0 clientes previos).
+ * 3. NO envía más información si la ruta ya tiene clientes agregados o si ya fue notificada.
+ * 4. Envío ÚNICO (un solo canal limpio para evitar registros repetidos).
+ * 5. Envía la URL de Cloudinary de la BD (sin Base64).
  */
-const checkAndNotifyFirstClientInNewRoute = (
-  newCustomer: Customer,
+const notifyClientAddedToRoute = (
+  customer: Customer,
   targetRouteId: string,
+  actionType: 'CREACION_CLIENTE' | 'TRANSFERENCIA_CLIENTE',
   allRoutes: Route[],
-  previousClientsCount: number
+  allUsers: User[],
+  allCustomers: Customer[],
+  currentCompanyConfig?: CompanyConfig
 ) => {
   try {
-    const totalRutas = allRoutes.length;
-    // Condición: Total de rutas > 1 Y es el primer cliente en esta ruta (antes tenía 0 clientes)
-    if (totalRutas <= 1 || previousClientsCount > 0) return;
-
-    const targetRoute = allRoutes.find(r => r.id === targetRouteId);
-    if (!targetRoute) return;
-
-    const webhookUrl = localStorage.getItem('prestapp_appscript_webhook_url') ||
-                       (import.meta.env.VITE_APPS_SCRIPT_WEBHOOK_URL as string) ||
-                       APPS_SCRIPT_WEBHOOK_URL;
-
+    const webhookUrl = APPS_SCRIPT_WEBHOOK_URL;
     if (!webhookUrl || !webhookUrl.startsWith('http')) return;
 
-    // Resumen de todas las rutas de la tabla con nombre y fecha de creación
-    const routesSummary = allRoutes.map((r, index) => ({
-      numero: index + 1,
-      id: r.id,
-      nombre: r.nombre,
-      created_at: r.created_at || 'Sin fecha',
-      descripcion: r.descripcion || 'Sin descripción'
-    }));
+    // Rutas efectivas
+    const effectiveRoutes = (allRoutes && allRoutes.length > 0)
+      ? allRoutes
+      : getSafeLocalStorage<Route[]>(STORAGE_KEY_ROUTES, []);
 
-    const payload = {
-      tipo_evento: 'PRIMER_CLIENTE_EN_RUTA_NUEVA',
-      total_rutas: totalRutas,
-      ruta_activada: {
-        id: targetRoute.id,
-        nombre: targetRoute.nombre,
-        created_at: targetRoute.created_at || new Date().toISOString(),
-        descripcion: targetRoute.descripcion || ''
-      },
-      cliente_creado: {
-        id: newCustomer.id,
-        nombre: newCustomer.nombre,
-        barrio: newCustomer.barrio || 'Sin barrio',
-        telefono: newCustomer.telefono || 'Sin teléfono'
-      },
-      todas_las_rutas: routesSummary,
-      user_email: 'rsaldarriaga.sismasalud@gmail.com',
+    // REGLA 1: Solo enviar si hay más de 1 ruta (la 1ra ruta es la gratuita)
+    if (effectiveRoutes.length <= 1) {
+      console.log('[APPS_SCRIPT] Omitido: Solo hay 1 ruta (la primera es gratuita). Total rutas:', effectiveRoutes.length);
+      return;
+    }
+
+    // REGLA 2: Registro persistente - Si esta ruta ya fue notificada previamente, NUNCA repetir
+    const notifiedRouteIds = getSafeLocalStorage<string[]>(STORAGE_KEY_NOTIFIED_ROUTES, []);
+    if (notifiedRouteIds.includes(targetRouteId)) {
+      console.log('[APPS_SCRIPT] Omitido: Esta ruta ya fue notificada anteriormente:', targetRouteId);
+      return;
+    }
+
+    // Bloqueo en memoria para concurrencia
+    if (inFlightRouteNotifs.has(targetRouteId)) {
+      console.log('[APPS_SCRIPT] Omitido: Notificación ya en curso para la ruta:', targetRouteId);
+      return;
+    }
+
+    // REGLA 3: Verificar que la ruta NO tenga clientes previos (solo se notifica el primer cliente / movimiento)
+    const effectiveCustomers = (allCustomers && allCustomers.length > 0)
+      ? allCustomers
+      : getSafeLocalStorage<Customer[]>(STORAGE_KEY_CUSTOMERS, []);
+
+    const existingClientsInTargetRoute = effectiveCustomers.filter(c => c.ruta_id === targetRouteId && c.id !== customer.id);
+    if (existingClientsInTargetRoute.length > 0) {
+      console.log(`[APPS_SCRIPT] Omitido: La ruta ya tiene ${existingClientsInTargetRoute.length} cliente(s). No se notifica.`);
+      return;
+    }
+
+    const targetRoute = effectiveRoutes.find(r => r.id === targetRouteId) || {
+      id: targetRouteId,
+      nombre: 'Ruta Nueva / Asignada',
+      descripcion: 'Ruta activa',
+      usuario_id: ''
+    };
+
+    // Usuarios efectivos
+    const effectiveUsers = (allUsers && allUsers.length > 0)
+      ? allUsers
+      : getSafeLocalStorage<User[]>(STORAGE_KEY_USERS, []);
+
+    // Cobrador asignado a la ruta
+    const collector = effectiveUsers.find(u => u.id === targetRoute.usuario_id);
+    const collectorName = collector ? `${collector.nombre} (${collector.rol || 'Cobrador'})` : 'Sin asignar';
+
+    // Correo y nombre del Admin en sesión
+    const activeUserId = localStorage.getItem('prestapp_active_user_id');
+    const activeUser = effectiveUsers.find(u => u.id === activeUserId);
+    const adminEmail = activeUser?.correo || 'rsaldarriaga.sismasalud@gmail.com';
+    const adminName = activeUser?.nombre || 'Administrador';
+
+    // Configuración de Empresa efectiva (URL de Cloudinary, NUNCA Base64)
+    const effectiveCompany = currentCompanyConfig || getSafeLocalStorage<CompanyConfig>(STORAGE_KEY_COMPANY, DEFAULT_COMPANY_CONFIG);
+    const empresaNombre = effectiveCompany?.nombre || 'PRESTAPP';
+    const rawLogo = effectiveCompany?.logo_url || '';
+    const empresaLogo = (rawLogo.startsWith('http://') || rawLogo.startsWith('https://')) ? rawLogo : '';
+    const empresaNit = effectiveCompany?.nit || '900.123.456-7';
+    const empresaSlogan = effectiveCompany?.slogan || 'Manejo Financiero Fácil y Rápido';
+
+    const fechaFormateada = new Date().toLocaleString('es-CO');
+
+    const payload: Record<string, unknown> = {
+      tipo_evento: 'CLIENTE_AGREGADO_A_RUTA',
+      mensaje_clave: 'Primer Cliente Agregado a Nueva Ruta',
+      accion: actionType === 'CREACION_CLIENTE' ? 'Nuevo Cliente Creado (Primer Cliente)' : 'Cliente Transferido (Primer Cliente)',
+      fecha_hora: fechaFormateada,
+      empresa_nombre: empresaNombre,
+      empresa_logo: empresaLogo,
+      empresa_nit: empresaNit,
+      empresa_slogan: empresaSlogan,
+      nombre_ruta: targetRoute.nombre,
+      descripcion_ruta: targetRoute.descripcion || 'Sin detalle',
+      cobrador_asignado: collectorName,
+      cliente_nombre: customer.nombre || 'Cliente sin nombre',
+      cliente_documento: customer.documento || 'Sin documento',
+      cliente_telefono: customer.telefono || 'Sin teléfono',
+      cliente_direccion: `${customer.direccion || ''} ${customer.barrio ? '(' + customer.barrio + ')' : ''}`.trim() || 'Sin dirección',
+      admin_email: adminEmail,
+      admin_nombre: adminName,
+      total_rutas: effectiveRoutes.length,
       timestamp: new Date().toISOString()
     };
 
-    // Envío en segundo plano
-    fetch(webhookUrl, {
-      method: 'POST',
-      mode: 'no-cors',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload)
-    }).catch(err => {
-      console.warn('[SILENT NOTIFY] Notice:', err);
-    });
+    const serializedPayload = JSON.stringify(payload);
+
+    // Marcar como notificada inmediatamente para blindar contra repeticiones
+    inFlightRouteNotifs.add(targetRouteId);
+    localStorage.setItem(STORAGE_KEY_NOTIFIED_ROUTES, JSON.stringify([...notifiedRouteIds, targetRouteId]));
+
+    console.log('[APPS_SCRIPT] Enviando notificación ÚNICA a Google Sheets & Email:', payload);
+
+    // ENVÍO ÚNICO EXCLUSIVO: Formulario POST en Iframe Oculto (100% compatible con Apps Script y 302 redirects)
+    if (typeof document !== 'undefined') {
+      const iframeName = 'gscript_target_frame_' + Date.now();
+      const hiddenIframe = document.createElement('iframe');
+      hiddenIframe.name = iframeName;
+      hiddenIframe.style.display = 'none';
+      hiddenIframe.style.width = '0';
+      hiddenIframe.style.height = '0';
+      hiddenIframe.style.position = 'absolute';
+      hiddenIframe.style.left = '-9999px';
+      document.body.appendChild(hiddenIframe);
+
+      const hiddenForm = document.createElement('form');
+      hiddenForm.method = 'POST';
+      hiddenForm.action = webhookUrl;
+      hiddenForm.target = iframeName;
+      hiddenForm.style.display = 'none';
+
+      // Campo 'data' con JSON completo
+      const dataInput = document.createElement('input');
+      dataInput.type = 'hidden';
+      dataInput.name = 'data';
+      dataInput.value = serializedPayload;
+      hiddenForm.appendChild(dataInput);
+
+      // Campos individuales para e.parameter de Google Apps Script
+      Object.entries(payload).forEach(([key, val]) => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = key;
+        input.value = typeof val === 'string' ? val : String(val);
+        hiddenForm.appendChild(input);
+      });
+
+      document.body.appendChild(hiddenForm);
+      hiddenForm.submit();
+
+      // Limpieza ordenada de elementos DOM temporales
+      setTimeout(() => {
+        try {
+          if (hiddenForm.parentNode) hiddenForm.parentNode.removeChild(hiddenForm);
+          if (hiddenIframe.parentNode) hiddenIframe.parentNode.removeChild(hiddenIframe);
+        } catch (cleanErr) {
+          console.debug('[APPS_SCRIPT] Limpieza DOM completada:', cleanErr);
+        }
+      }, 10000);
+    }
+
   } catch (e) {
-    console.warn('[SILENT NOTIFY] Exception:', e);
+    console.warn('[NOTIFY CLIENT ROUTE] Exception:', e);
   }
 };
 
@@ -208,6 +367,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     getSafeLocalStorage<Postponement[]>(STORAGE_KEY_POSTPONEMENTS, [])
   );
 
+  const [companyConfig, setCompanyConfig] = useState<CompanyConfig>(() =>
+    getSafeLocalStorage<CompanyConfig>(STORAGE_KEY_COMPANY, DEFAULT_COMPANY_CONFIG)
+  );
+
+  const [expenseConcepts, setExpenseConcepts] = useState<ExpenseConcept[]>(() =>
+    getSafeLocalStorage<ExpenseConcept[]>(STORAGE_KEY_CONCEPTS, DEFAULT_EXPENSE_CONCEPTS)
+  );
+
+  const [expenses, setExpenses] = useState<Expense[]>(() =>
+    getSafeLocalStorage<Expense[]>(STORAGE_KEY_EXPENSES, [])
+  );
+
   const [isSupabaseConnected, setIsSupabaseConnected] = useState<boolean>(!isSupabaseMocked);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -219,6 +390,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => { setSafeLocalStorage(STORAGE_KEY_PAYMENTS, payments); }, [payments]);
   useEffect(() => { setSafeLocalStorage(STORAGE_KEY_ABONOS, abonos); }, [abonos]);
   useEffect(() => { setSafeLocalStorage(STORAGE_KEY_POSTPONEMENTS, postponements); }, [postponements]);
+  useEffect(() => { setSafeLocalStorage(STORAGE_KEY_COMPANY, companyConfig); }, [companyConfig]);
+  useEffect(() => { setSafeLocalStorage(STORAGE_KEY_CONCEPTS, expenseConcepts); }, [expenseConcepts]);
+  useEffect(() => { setSafeLocalStorage(STORAGE_KEY_EXPENSES, expenses); }, [expenses]);
 
   const seedSupabaseDatabase = useCallback(async (): Promise<{ success: boolean; message: string }> => {
     return { 
@@ -306,6 +480,46 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .select('*')
         .order('fecha', { ascending: false });
       if (!postpErr && remotePostp) setPostponements(remotePostp);
+
+      // 8. Configuración de Empresa
+      try {
+        const { data: remoteComp, error: compErr } = await supabase
+          .from('empresa_config')
+          .select('*')
+          .limit(1)
+          .maybeSingle();
+        if (!compErr && remoteComp && remoteComp.nombre) {
+          setCompanyConfig(remoteComp);
+        }
+      } catch {
+        // Ignorar si la tabla aún no se ha creado en Supabase
+      }
+
+      // 9. Conceptos de Gastos
+      try {
+        const { data: remoteConcepts, error: concErr } = await supabase
+          .from('conceptos_gasto')
+          .select('*')
+          .order('created_at', { ascending: true });
+        if (!concErr && remoteConcepts && remoteConcepts.length > 0) {
+          setExpenseConcepts(remoteConcepts);
+        }
+      } catch {
+        // Ignorar si la tabla aún no se ha creado en Supabase
+      }
+
+      // 10. Gastos
+      try {
+        const { data: remoteExpenses, error: expErr } = await supabase
+          .from('gastos')
+          .select('*')
+          .order('fecha', { ascending: false });
+        if (!expErr && remoteExpenses) {
+          setExpenses(remoteExpenses);
+        }
+      } catch {
+        // Ignorar si la tabla aún no se ha creado en Supabase
+      }
 
     } catch (err: unknown) {
       console.warn('Supabase fetch error:', err);
@@ -477,18 +691,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     await safeSupabaseExecute('insert cliente', () => supabase.from('clientes').insert(dbPayload));
 
-    // Si la ruta no tenía clientes (clientes previos = 0) y el total de rutas es > 1, disparar la alerta
-    checkAndNotifyFirstClientInNewRoute(
-      newCustomer,
-      newCustomer.ruta_id,
-      routes,
-      routeClientsBefore.length
-    );
+    // Disparador 2: Nuevo cliente creado en ruta (si total_rutas > 1 y es el 1er cliente de la ruta)
+    notifyClientAddedToRoute(newCustomer, newCustomer.ruta_id, 'CREACION_CLIENTE', routes, users, customers, companyConfig);
 
     return newCustomer;
   };
 
   const updateCustomer = async (id: string, data: Partial<Customer>): Promise<void> => {
+    const prevCustomer = customers.find(c => c.id === id);
     const updatedCustomers = customers.map(c => c.id === id ? { ...c, ...data } : c);
     setCustomers(updatedCustomers);
     
@@ -503,6 +713,19 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     await safeSupabaseExecute('update cliente', () => supabase.from('clientes').update(dbData).eq('id', id));
+
+    // Si la ruta fue modificada en la actualización (transferencia)
+    if (data.ruta_id && prevCustomer && data.ruta_id !== prevCustomer.ruta_id) {
+      notifyClientAddedToRoute(
+        { ...prevCustomer, ...data, ruta_id: data.ruta_id },
+        data.ruta_id,
+        'TRANSFERENCIA_CLIENTE',
+        routes,
+        users,
+        customers,
+        companyConfig
+      );
+    }
   };
 
   const deleteCustomer = async (customerId: string): Promise<{ success: boolean; message?: string }> => {
@@ -534,18 +757,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const reassignCustomerRoute = async (customerId: string, newRouteId: string): Promise<void> => {
-    const previousClientsInTarget = customers.filter(c => c.ruta_id === newRouteId).length;
-    const targetCustomer = customers.find(c => c.id === customerId);
+    // updateCustomer ya gestiona la actualización y la notificación si la ruta cambia
     await updateCustomer(customerId, { ruta_id: newRouteId });
-
-    if (targetCustomer) {
-      checkAndNotifyFirstClientInNewRoute(
-        { ...targetCustomer, ruta_id: newRouteId },
-        newRouteId,
-        routes,
-        previousClientsInTarget
-      );
-    }
   };
 
   const reorderCustomersInRoute = async (routeId: string, orderedCustomerIds: string[]): Promise<void> => {
@@ -918,6 +1131,127 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return newAbono;
   };
 
+  const updateCompanyConfig = async (data: Partial<CompanyConfig>): Promise<CompanyConfig> => {
+    const updated: CompanyConfig = {
+      ...companyConfig,
+      ...data,
+      updated_at: new Date().toISOString()
+    };
+    setCompanyConfig(updated);
+
+    const dbPayload = {
+      nombre: updated.nombre,
+      slogan: updated.slogan || '',
+      nit: updated.nit || '',
+      logo_url: updated.logo_url || '',
+      updated_at: updated.updated_at
+    };
+
+    if (isValidUUID(updated.id)) {
+      await safeSupabaseExecute('update empresa_config', () => 
+        supabase.from('empresa_config').upsert({ id: updated.id, ...dbPayload })
+      );
+    } else {
+      await safeSupabaseExecute('insert/upsert empresa_config', async () => {
+        const { data: existing } = await supabase.from('empresa_config').select('id').limit(1).maybeSingle();
+        if (existing?.id) {
+          return supabase.from('empresa_config').update(dbPayload).eq('id', existing.id);
+        } else {
+          return supabase.from('empresa_config').insert(dbPayload);
+        }
+      });
+    }
+
+    return updated;
+  };
+
+  const addExpenseConcept = async (nombre: string): Promise<ExpenseConcept> => {
+    const newConcept: ExpenseConcept = {
+      id: crypto.randomUUID(),
+      nombre: nombre.trim(),
+      activo: true,
+      created_at: new Date().toISOString()
+    };
+
+    setExpenseConcepts(prev => [...prev, newConcept]);
+
+    const dbPayload = {
+      id: newConcept.id,
+      nombre: newConcept.nombre,
+      activo: newConcept.activo,
+      created_at: newConcept.created_at
+    };
+
+    await safeSupabaseExecute('insert concepto_gasto', () => supabase.from('conceptos_gasto').insert(dbPayload));
+    return newConcept;
+  };
+
+  const updateExpenseConcept = async (id: string, data: Partial<ExpenseConcept>): Promise<void> => {
+    setExpenseConcepts(prev => prev.map(c => c.id === id ? { ...c, ...data } : c));
+    await safeSupabaseExecute('update concepto_gasto', () => supabase.from('conceptos_gasto').update(data).eq('id', id));
+  };
+
+  const toggleExpenseConceptActive = async (id: string): Promise<void> => {
+    const concept = expenseConcepts.find(c => c.id === id);
+    if (concept) {
+      await updateExpenseConcept(id, { activo: !concept.activo });
+    }
+  };
+
+  const deleteExpenseConcept = async (id: string): Promise<{ success: boolean; message?: string }> => {
+    const usedInExpenses = expenses.some(e => e.concepto_id === id);
+    if (usedInExpenses) {
+      await updateExpenseConcept(id, { activo: false });
+      return { success: true, message: 'El concepto se ha desactivado porque tiene gastos históricos registrados.' };
+    }
+    setExpenseConcepts(prev => prev.filter(c => c.id !== id));
+    await safeSupabaseExecute('delete concepto_gasto', () => supabase.from('conceptos_gasto').delete().eq('id', id));
+    return { success: true };
+  };
+
+  const addExpense = async (data: {
+    concepto_id: string;
+    monto: number;
+    descripcion?: string;
+    fecha?: string;
+    usuario_id?: string;
+  }): Promise<Expense> => {
+    const activeUserId = data.usuario_id || localStorage.getItem('prestapp_active_user_id') || users.find(u => u.rol === 'ADMIN')?.id || 'admin';
+    const newExpense: Expense = {
+      id: crypto.randomUUID(),
+      codigo: generateExpenseCode(),
+      concepto_id: data.concepto_id,
+      usuario_id: activeUserId,
+      monto: Number(data.monto) || 0,
+      descripcion: data.descripcion?.trim() || '',
+      fecha: data.fecha || new Date().toISOString(),
+      created_at: new Date().toISOString()
+    };
+
+    setExpenses(prev => [newExpense, ...prev]);
+
+    const dbPayload = {
+      id: newExpense.id,
+      codigo: newExpense.codigo,
+      concepto_id: isValidUUID(newExpense.concepto_id) ? newExpense.concepto_id : null,
+      usuario_id: isValidUUID(newExpense.usuario_id) ? newExpense.usuario_id : null,
+      monto: newExpense.monto,
+      descripcion: newExpense.descripcion,
+      fecha: newExpense.fecha,
+      created_at: newExpense.created_at
+    };
+
+    await safeSupabaseExecute('insert gasto', () => supabase.from('gastos').insert(dbPayload));
+
+    return newExpense;
+  };
+
+  const deleteExpense = async (expenseId: string): Promise<{ success: boolean; message?: string }> => {
+    setExpenses(prev => prev.filter(e => e.id !== expenseId));
+    await safeSupabaseExecute('delete gasto', () => supabase.from('gastos').delete().eq('id', expenseId));
+    return { success: true };
+  };
+
   const getDashboardStats = (currentUserId?: string, role: 'ADMIN' | 'COBRADOR' = 'ADMIN'): DashboardStats => {
     const todayStr = new Date().toISOString().split('T')[0];
     
@@ -936,6 +1270,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const todayPayments = payments.filter(p => p.fecha.startsWith(todayStr));
     const recaudoHoy = todayPayments.reduce((sum, p) => sum + p.valor, 0);
+
+    const todayExpenses = expenses.filter(e => e.fecha.startsWith(todayStr));
+    const gastosHoy = todayExpenses.reduce((sum, e) => sum + e.monto, 0);
 
     const totalEnMora = relevantLoans.filter(l => l.estado === 'EN_MORA').reduce((sum, l) => sum + l.saldo, 0);
     const porcentajeMora = carteraTotal > 0 ? Math.round((totalEnMora / carteraTotal) * 100) : 0;
@@ -993,6 +1330,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return {
       carteraTotal,
       recaudoHoy,
+      gastosHoy,
       metaDia: 500000,
       totalClientesActivos: routeCustomers.filter(c => c.estado === 'ACTIVO').length,
       totalPrestamosActivos: relevantLoans.filter(l => l.estado === 'ACTIVO' || l.estado === 'EN_MORA').length,
@@ -1012,6 +1350,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         loans,
         payments,
         abonos,
+        companyConfig,
+        updateCompanyConfig,
+        expenseConcepts,
+        expenses,
+        addExpenseConcept,
+        updateExpenseConcept,
+        toggleExpenseConceptActive,
+        deleteExpenseConcept,
+        addExpense,
+        deleteExpense,
         isSupabaseConnected,
         isSyncing,
         syncError,

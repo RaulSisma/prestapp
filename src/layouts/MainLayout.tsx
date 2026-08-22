@@ -4,13 +4,15 @@ import {
   LayoutDashboard, Users, DollarSign, 
   Route as RouteIcon, UserCheck, FileText, 
   Shield, Menu, X, Smartphone, Key, LogOut,
-  ChevronRight, Sparkles
+  ChevronRight, Sparkles, Receipt, Building2
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useData } from '../contexts/DataContext';
 import { UserProfileModal } from '../components/UserProfileModal';
 
 export const MainLayout: React.FC = () => {
   const { currentUser, role, hasPermission, logout } = useAuth();
+  const { companyConfig } = useData();
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
@@ -38,7 +40,10 @@ export const MainLayout: React.FC = () => {
     }
   };
 
-  const hasAnyAdminOrAuditModule = hasPermission('view_routes') || hasPermission('view_users') || hasPermission('view_reports');
+  const hasAnyAdminOrAuditModule = hasPermission('view_routes') || hasPermission('view_users') || hasPermission('view_reports') || hasPermission('view_company_settings');
+
+  const appName = companyConfig.nombre || 'PRESTAPP';
+  const appSlogan = companyConfig.slogan || 'Gestión Financiera';
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
@@ -58,14 +63,25 @@ export const MainLayout: React.FC = () => {
 
           <div 
             onClick={() => navigate(hasPermission('view_dashboard') ? '/' : '/field-route')} 
-            className="flex items-center gap-2 cursor-pointer group"
+            className="flex items-center gap-2.5 cursor-pointer group"
           >
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center font-black text-slate-950 text-lg sm:text-xl shadow-md shadow-emerald-500/20 group-hover:scale-105 transition">
-              P
-            </div>
+            {companyConfig.logo_url ? (
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-slate-900 border border-slate-700/80 flex items-center justify-center overflow-hidden p-1 shadow-md group-hover:scale-105 transition">
+                <img 
+                  src={companyConfig.logo_url} 
+                  alt="Logo" 
+                  className="max-h-full max-w-full object-contain"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+            ) : (
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center font-black text-slate-950 text-lg sm:text-xl shadow-md shadow-emerald-500/20 group-hover:scale-105 transition">
+                {appName.charAt(0).toUpperCase()}
+              </div>
+            )}
             <div>
-              <h1 className="font-extrabold text-base sm:text-lg text-white leading-none tracking-tight">PRESTAPP</h1>
-              <p className="text-[9px] sm:text-[10px] text-emerald-400 font-semibold uppercase tracking-widest mt-0.5">Gestión Financiera</p>
+              <h1 className="font-extrabold text-base sm:text-lg text-white leading-none tracking-tight truncate max-w-[170px] sm:max-w-xs">{appName}</h1>
+              <p className="text-[9px] sm:text-[10px] text-emerald-400 font-semibold uppercase tracking-widest mt-0.5 truncate max-w-[170px] sm:max-w-xs">{appSlogan}</p>
             </div>
           </div>
         </div>
@@ -184,6 +200,20 @@ export const MainLayout: React.FC = () => {
                 </NavLink>
               )}
 
+              {hasPermission('view_expenses') && (
+                <NavLink
+                  to="/expenses"
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition ${
+                      isActive ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                    }`
+                  }
+                >
+                  <Receipt className="w-4 h-4 text-amber-400" />
+                  {role === 'ADMIN' ? 'Gastos Operativos' : 'Mis Gastos'}
+                </NavLink>
+              )}
+
               {hasAnyAdminOrAuditModule && (
                 <>
                   <span className="px-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider block pt-4 mb-2">
@@ -229,6 +259,20 @@ export const MainLayout: React.FC = () => {
                     >
                       <FileText className="w-4 h-4" />
                       Reportes
+                    </NavLink>
+                  )}
+
+                  {hasPermission('view_company_settings') && (
+                    <NavLink
+                      to="/settings"
+                      className={({ isActive }) =>
+                        `flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-medium text-sm transition ${
+                          isActive ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                        }`
+                      }
+                    >
+                      <Building2 className="w-4 h-4 text-emerald-400" />
+                      Configuración Empresa
                     </NavLink>
                   )}
                 </>
@@ -375,8 +419,26 @@ export const MainLayout: React.FC = () => {
                           }
                         >
                           <div className="flex items-center gap-3">
-                            <DollarSign className="w-4 h-4 text-amber-400" />
+                            <DollarSign className="w-4 h-4 text-emerald-400" />
                             <span>Préstamos y Cartera</span>
+                          </div>
+                          <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
+                        </NavLink>
+                      )}
+
+                      {hasPermission('view_expenses') && (
+                        <NavLink
+                          to="/expenses"
+                          onClick={() => setMobileMenuOpen(false)}
+                          className={({ isActive }) =>
+                            `flex items-center justify-between px-3.5 py-2.5 rounded-xl font-semibold text-xs transition ${
+                              isActive ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                            }`
+                          }
+                        >
+                          <div className="flex items-center gap-3">
+                            <Receipt className="w-4 h-4 text-amber-400" />
+                            <span>{role === 'ADMIN' ? 'Gastos Operativos' : 'Mis Gastos'}</span>
                           </div>
                           <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
                         </NavLink>
@@ -439,6 +501,24 @@ export const MainLayout: React.FC = () => {
                             <div className="flex items-center gap-3">
                               <FileText className="w-4 h-4 text-purple-400" />
                               <span>Reportes y Liquidación</span>
+                            </div>
+                            <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
+                          </NavLink>
+                        )}
+
+                        {hasPermission('view_company_settings') && (
+                          <NavLink
+                            to="/settings"
+                            onClick={() => setMobileMenuOpen(false)}
+                            className={({ isActive }) =>
+                              `flex items-center justify-between px-3.5 py-2.5 rounded-xl font-semibold text-xs transition ${
+                                isActive ? 'bg-purple-600/30 text-purple-200 border border-purple-500/50 font-bold' : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                              }`
+                            }
+                          >
+                            <div className="flex items-center gap-3">
+                              <Building2 className="w-4 h-4 text-purple-400" />
+                              <span>Configuración Empresa</span>
                             </div>
                             <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
                           </NavLink>

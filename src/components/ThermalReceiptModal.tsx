@@ -19,7 +19,7 @@ export const ThermalReceiptModal: React.FC<ThermalReceiptModalProps> = ({
   onClose,
   onDeleteSuccess
 }) => {
-  const { users, routes, customers, loans, deletePayment } = useData();
+  const { users, routes, customers, loans, deletePayment, companyConfig } = useData();
   const { role } = useAuth();
 
   if (!payment) return null;
@@ -38,6 +38,10 @@ export const ThermalReceiptModal: React.FC<ThermalReceiptModalProps> = ({
   const loanBalance = payment.loanBalanceAfter ?? (resolvedLoan ? resolvedLoan.saldo : 0);
   const initialMonto = resolvedLoan ? resolvedLoan.monto_total : payment.valor;
 
+  const companyName = companyConfig.nombre || 'PRESTAPP';
+  const companySlogan = companyConfig.slogan || 'Manejo Financiero Fácil y Rápido';
+  const companyNit = companyConfig.nit || '900.123.456-7';
+
   const formattedDate = new Date(payment.fecha).toLocaleString('es-CO', {
     dateStyle: 'medium',
     timeStyle: 'short'
@@ -55,7 +59,8 @@ export const ThermalReceiptModal: React.FC<ThermalReceiptModalProps> = ({
     maximumFractionDigits: 0
   }).format(loanBalance);
 
-  const whatsappMessage = `*COMPROBANTE DE PAGO - PRESTAPP* 🧾\n` +
+  const whatsappMessage = `*COMPROBANTE DE PAGO - ${companyName.toUpperCase()}* 🧾\n` +
+    (companySlogan ? `_${companySlogan}_\n` : '') +
     `----------------------------------------\n` +
     `👤 *Cliente:* ${customerName}\n` +
     `👮 *Cobrador:* ${collectorName}\n` +
@@ -108,9 +113,19 @@ export const ThermalReceiptModal: React.FC<ThermalReceiptModalProps> = ({
             className="bg-amber-50/95 text-slate-900 p-4 sm:p-5 rounded-lg shadow-inner thermal-font text-xs space-y-3 border border-amber-200"
           >
             <div className="text-center pb-2 border-b border-dashed border-slate-400">
-              <h2 className="text-base font-bold tracking-wider">PRESTAPP</h2>
-              <p className="text-[10px] text-slate-600 uppercase tracking-widest">Manejo Financiero Fácil y Rápido</p>
-              <p className="text-[10px] text-slate-500 mt-0.5">NIT: 900.123.456-7</p>
+              {companyConfig.logo_url && (
+                <div className="w-14 h-14 mx-auto mb-1 flex items-center justify-center">
+                  <img 
+                    src={companyConfig.logo_url} 
+                    alt="Logo" 
+                    className="max-h-full max-w-full object-contain"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+              )}
+              <h2 className="text-base font-bold tracking-wider uppercase">{companyName}</h2>
+              {companySlogan && <p className="text-[10px] text-slate-600 uppercase tracking-widest">{companySlogan}</p>}
+              {companyNit && <p className="text-[10px] text-slate-500 mt-0.5">NIT: {companyNit}</p>}
             </div>
 
             <div className="space-y-1">

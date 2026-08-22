@@ -56,8 +56,8 @@ export async function compressImage(file: File, maxWidth = 640, maxHeight = 640,
         const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.drawImage(img, 0, 0, width, height);
-          // Usamos JPEG comprimido al 70% de calidad para tamaño óptimo (~25KB)
-          const dataUrl = canvas.toDataURL('image/jpeg', quality);
+          const isPng = file.type === 'image/png' || file.name.toLowerCase().endsWith('.png');
+          const dataUrl = isPng ? canvas.toDataURL('image/png') : canvas.toDataURL('image/jpeg', quality);
           resolve(dataUrl);
         } else {
           resolve(event.target?.result as string || '');

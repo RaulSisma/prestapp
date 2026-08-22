@@ -8,6 +8,8 @@ import LoansPage from './pages/LoansPage';
 import RoutesPage from './pages/RoutesPage';
 import UsersPage from './pages/UsersPage';
 import ReportsPage from './pages/ReportsPage';
+import ExpensesPage from './pages/ExpensesPage';
+import CompanySettingsPage from './pages/CompanySettingsPage';
 import { DataProvider } from './contexts/DataContext';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -88,6 +90,22 @@ function App() {
                   element={
                     <RoleGuard requiredPermission="view_reports">
                       <ReportsPage />
+                    </RoleGuard>
+                  } 
+                />
+                <Route 
+                  path="expenses" 
+                  element={
+                    <RoleGuard requiredPermission="view_expenses">
+                      <ExpensesPage />
+                    </RoleGuard>
+                  } 
+                />
+                <Route 
+                  path="settings" 
+                  element={
+                    <RoleGuard requiredPermission="view_company_settings">
+                      <CompanySettingsPage />
                     </RoleGuard>
                   } 
                 />

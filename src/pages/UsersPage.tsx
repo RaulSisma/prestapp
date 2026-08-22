@@ -584,7 +584,7 @@ COMMENT ON COLUMN usuarios.permisos IS 'Matriz granular de permisos (módulos y 
                       <span className="text-xs text-slate-200">Gestión de Usuarios</span>
                     </label>
 
-                    <label className="flex items-center gap-2.5 p-2 rounded-xl bg-slate-900 border border-slate-800/80 hover:border-slate-700 cursor-pointer sm:col-span-2">
+                    <label className="flex items-center gap-2.5 p-2 rounded-xl bg-slate-900 border border-slate-800/80 hover:border-slate-700 cursor-pointer">
                       <input
                         type="checkbox"
                         checked={formPermisos.view_reports}
@@ -592,6 +592,26 @@ COMMENT ON COLUMN usuarios.permisos IS 'Matriz granular de permisos (módulos y 
                         className="w-4 h-4 rounded text-emerald-500 bg-slate-800 border-slate-700 focus:ring-emerald-500"
                       />
                       <span className="text-xs text-slate-200">Reportes y Liquidación</span>
+                    </label>
+
+                    <label className="flex items-center gap-2.5 p-2 rounded-xl bg-slate-900 border border-slate-800/80 hover:border-slate-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formPermisos.view_expenses}
+                        onChange={() => handleTogglePermission('view_expenses')}
+                        className="w-4 h-4 rounded text-emerald-500 bg-slate-800 border-slate-700 focus:ring-emerald-500"
+                      />
+                      <span className="text-xs text-slate-200">Módulo de Gastos</span>
+                    </label>
+
+                    <label className="flex items-center gap-2.5 p-2 rounded-xl bg-slate-900 border border-slate-800/80 hover:border-slate-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formPermisos.view_company_settings}
+                        onChange={() => handleTogglePermission('view_company_settings')}
+                        className="w-4 h-4 rounded text-emerald-500 bg-slate-800 border-slate-700 focus:ring-emerald-500"
+                      />
+                      <span className="text-xs text-slate-200">Configuración Empresa</span>
                     </label>
                   </div>
                 </div>
@@ -718,6 +738,58 @@ COMMENT ON COLUMN usuarios.permisos IS 'Matriz granular de permisos (módulos y 
                           className="w-3.5 h-3.5 rounded text-red-500 bg-slate-800 border-slate-700"
                         />
                         <span className="text-[11px] text-red-300">Eliminar Rutas</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Acciones Gastos Operativos y Configuración */}
+                  <div className="space-y-1.5 pt-2 border-t border-slate-900">
+                    <span className="text-[11px] font-bold text-slate-400 block">Gastos y Empresa:</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <label className="flex items-center gap-2 p-2 rounded-xl bg-slate-900 border border-slate-800/80 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={formPermisos.create_expense}
+                          onChange={() => handleTogglePermission('create_expense')}
+                          className="w-3.5 h-3.5 rounded text-emerald-500 bg-slate-800 border-slate-700"
+                        />
+                        <span className="text-[11px] text-slate-300">Registrar Gastos</span>
+                      </label>
+                      <label className="flex items-center gap-2 p-2 rounded-xl bg-slate-900 border border-slate-800/80 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={formPermisos.delete_own_expense}
+                          onChange={() => handleTogglePermission('delete_own_expense')}
+                          className="w-3.5 h-3.5 rounded text-red-500 bg-slate-800 border-slate-700"
+                        />
+                        <span className="text-[11px] text-red-300">Eliminar Gastos Propios</span>
+                      </label>
+                      <label className="flex items-center gap-2 p-2 rounded-xl bg-slate-900 border border-slate-800/80 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={formPermisos.delete_any_expense}
+                          onChange={() => handleTogglePermission('delete_any_expense')}
+                          className="w-3.5 h-3.5 rounded text-red-500 bg-slate-800 border-slate-700"
+                        />
+                        <span className="text-[11px] text-red-300">Eliminar Cualquier Gasto</span>
+                      </label>
+                      <label className="flex items-center gap-2 p-2 rounded-xl bg-slate-900 border border-slate-800/80 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={formPermisos.manage_expense_concepts}
+                          onChange={() => handleTogglePermission('manage_expense_concepts')}
+                          className="w-3.5 h-3.5 rounded text-purple-400 bg-slate-800 border-slate-700"
+                        />
+                        <span className="text-[11px] text-purple-300">Gestionar Conceptos</span>
+                      </label>
+                      <label className="flex items-center gap-2 p-2 rounded-xl bg-slate-900 border border-slate-800/80 cursor-pointer sm:col-span-2">
+                        <input
+                          type="checkbox"
+                          checked={formPermisos.edit_company_settings}
+                          onChange={() => handleTogglePermission('edit_company_settings')}
+                          className="w-3.5 h-3.5 rounded text-emerald-500 bg-slate-800 border-slate-700"
+                        />
+                        <span className="text-[11px] text-slate-300">Modificar Datos / Logo de Empresa</span>
                       </label>
                     </div>
                   </div>

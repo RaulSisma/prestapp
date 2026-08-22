@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, AlertCircle, CheckCircle2, RefreshCw } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useData } from '../contexts/DataContext';
 
 export const LoginPage: React.FC = () => {
   const { login } = useAuth();
+  const { companyConfig } = useData();
   const navigate = useNavigate();
 
   const [correo, setCorreo] = useState<string>('');
@@ -13,6 +15,9 @@ export const LoginPage: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [successMsg, setSuccessMsg] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+  const appName = companyConfig.nombre || 'PRESTAPP';
+  const appSlogan = companyConfig.slogan || 'Sistema de Gestión Financiera y Cobranza';
 
   const handleLoginSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -55,12 +60,23 @@ export const LoginPage: React.FC = () => {
         
         {/* Header App Info */}
         <div className="text-center space-y-2">
-          <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center font-black text-slate-950 text-3xl shadow-lg shadow-emerald-500/25">
-            P
-          </div>
-          <h1 className="text-2xl font-extrabold text-white tracking-tight">PRESTAPP</h1>
+          {companyConfig.logo_url ? (
+            <div className="w-16 h-16 mx-auto rounded-2xl bg-slate-900 border border-slate-700/80 flex items-center justify-center overflow-hidden p-1 shadow-lg shadow-emerald-500/10">
+              <img 
+                src={companyConfig.logo_url} 
+                alt="Logo" 
+                className="max-h-full max-w-full object-contain"
+                referrerPolicy="no-referrer"
+              />
+            </div>
+          ) : (
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center font-black text-slate-950 text-3xl shadow-lg shadow-emerald-500/25">
+              {appName.charAt(0).toUpperCase()}
+            </div>
+          )}
+          <h1 className="text-2xl font-extrabold text-white tracking-tight uppercase">{appName}</h1>
           <p className="text-xs text-emerald-400 font-semibold uppercase tracking-widest">
-            Sistema de Gestión Financiera y Cobranza
+            {appSlogan}
           </p>
         </div>
 

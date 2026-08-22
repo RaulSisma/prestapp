@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { 
   Search, MapPin, Phone, 
   FileText, UserPlus, DollarSign, X, Camera, UploadCloud, Eye,
-  Pencil, Receipt, Trash2, AlertTriangle
+  Pencil, Receipt, Trash2, AlertTriangle, CheckCircle
 } from 'lucide-react';
 import { useData } from '../contexts/DataContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -37,6 +37,7 @@ export const Customers: React.FC = () => {
   const [viewPhotosCustomer, setViewPhotosCustomer] = useState<Customer | null>(null);
   const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [notification, setNotification] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const [formNombre, setFormNombre] = useState<string>('');
   const [formDocumento, setFormDocumento] = useState<string>('');
@@ -135,6 +136,7 @@ export const Customers: React.FC = () => {
         estado: 'ACTIVO'
       });
       setShowAddCustomerModal(false);
+      setNotification({ type: 'success', text: 'Cliente Agregado a nueva Ruta ' });
       // AUTOMÁTICAMENTE ABRE EL MODAL DE NUEVO PRÉSTAMO PARA EL CLIENTE recién CREADO
       setShowLoanModalForCustomer(newCustomer);
     }
@@ -175,6 +177,23 @@ export const Customers: React.FC = () => {
           </button>
         )}
       </div>
+
+      {/* NOTIFICACIÓN ALERTA */}
+      {notification && (
+        <div className={`p-4 rounded-2xl text-xs sm:text-sm flex items-center justify-between border ${
+          notification.type === 'error' 
+            ? 'bg-red-950/70 border-red-800 text-red-300' 
+            : 'bg-emerald-950/70 border-emerald-800 text-emerald-300'
+        }`}>
+          <div className="flex items-center gap-2">
+            <CheckCircle className="w-5 h-5 text-emerald-400 shrink-0" />
+            <span>{notification.text}</span>
+          </div>
+          <button onClick={() => setNotification(null)} className="hover:text-white">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* BARRA BUSCADOR Y FILTROS */}
       <div className="flex flex-col sm:flex-row gap-3">

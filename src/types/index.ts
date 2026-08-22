@@ -9,6 +9,8 @@ export interface UserPermissions {
   view_routes: boolean;
   view_users: boolean;
   view_reports: boolean;
+  view_expenses: boolean;
+  view_company_settings: boolean;
 
   // B. Permisos de Acción Específica
   // Clientes
@@ -27,6 +29,16 @@ export interface UserPermissions {
   manage_routes: boolean;
   reassign_routes: boolean;
   delete_routes: boolean;
+
+  // Gastos y Conceptos
+  create_expense: boolean;
+  delete_own_expense: boolean;
+  view_all_expenses: boolean;
+  manage_expense_concepts: boolean;
+  delete_any_expense: boolean;
+
+  // Configuración de Empresa
+  edit_company_settings: boolean;
 }
 
 export const DEFAULT_ADMIN_PERMISSIONS: UserPermissions = {
@@ -37,6 +49,8 @@ export const DEFAULT_ADMIN_PERMISSIONS: UserPermissions = {
   view_routes: true,
   view_users: true,
   view_reports: true,
+  view_expenses: true,
+  view_company_settings: true,
 
   create_customer: true,
   edit_customer: true,
@@ -51,6 +65,14 @@ export const DEFAULT_ADMIN_PERMISSIONS: UserPermissions = {
   manage_routes: true,
   reassign_routes: true,
   delete_routes: true,
+
+  create_expense: true,
+  delete_own_expense: true,
+  view_all_expenses: true,
+  manage_expense_concepts: true,
+  delete_any_expense: true,
+
+  edit_company_settings: true,
 };
 
 export const DEFAULT_SUPERVISOR_PERMISSIONS: UserPermissions = {
@@ -61,6 +83,8 @@ export const DEFAULT_SUPERVISOR_PERMISSIONS: UserPermissions = {
   view_routes: true,
   view_users: false,
   view_reports: true,
+  view_expenses: true,
+  view_company_settings: false,
 
   create_customer: true,
   edit_customer: true,
@@ -75,6 +99,14 @@ export const DEFAULT_SUPERVISOR_PERMISSIONS: UserPermissions = {
   manage_routes: true,
   reassign_routes: true,
   delete_routes: false,
+
+  create_expense: true,
+  delete_own_expense: true,
+  view_all_expenses: false,
+  manage_expense_concepts: false,
+  delete_any_expense: false,
+
+  edit_company_settings: false,
 };
 
 export const DEFAULT_COBRADOR_PERMISSIONS: UserPermissions = {
@@ -85,6 +117,8 @@ export const DEFAULT_COBRADOR_PERMISSIONS: UserPermissions = {
   view_routes: false,
   view_users: false,
   view_reports: false,
+  view_expenses: true,
+  view_company_settings: false,
 
   create_customer: false,
   edit_customer: false,
@@ -99,6 +133,14 @@ export const DEFAULT_COBRADOR_PERMISSIONS: UserPermissions = {
   manage_routes: false,
   reassign_routes: false,
   delete_routes: false,
+
+  create_expense: true,
+  delete_own_expense: false,
+  view_all_expenses: false,
+  manage_expense_concepts: false,
+  delete_any_expense: false,
+
+  edit_company_settings: false,
 };
 
 export const getRoleDefaultPermissions = (role: UserRole): UserPermissions => {
@@ -237,6 +279,7 @@ export interface ExtraAbono {
 export interface DashboardStats {
   carteraTotal: number;
   recaudoHoy: number;
+  gastosHoy: number;
   metaDia: number;
   totalClientesActivos: number;
   totalPrestamosActivos: number;
@@ -256,3 +299,33 @@ export interface DashboardStats {
     porcentajeCumplimiento: number;
   }>;
 }
+
+export interface CompanyConfig {
+  id: string;
+  nombre: string;
+  slogan?: string;
+  nit?: string;
+  logo_url?: string;
+  updated_at?: string;
+}
+
+export interface ExpenseConcept {
+  id: string;
+  nombre: string;
+  activo: boolean;
+  created_at?: string;
+}
+
+export interface Expense {
+  id: string;
+  codigo: string;
+  concepto_id: string;
+  usuario_id: string;
+  monto: number;
+  descripcion?: string;
+  fecha: string; // ISO format string YYYY-MM-DDTHH:mm:ss
+  created_at?: string;
+  userName?: string;
+  conceptName?: string;
+}
+

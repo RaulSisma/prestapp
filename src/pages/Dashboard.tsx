@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   DollarSign, TrendingUp, AlertTriangle, Users, 
-  MapPin, Plus, ShieldCheck, Receipt, Eye, UserCheck 
+  MapPin, Plus, ShieldCheck, Receipt, Eye, UserCheck, TrendingDown
 } from 'lucide-react';
 import { useData } from '../contexts/DataContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -23,6 +23,7 @@ export const Dashboard: React.FC = () => {
 
   const formattedCartera = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(stats.carteraTotal);
   const formattedRecaudo = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(stats.recaudoHoy);
+  const formattedGastos = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(stats.gastosHoy);
   const formattedMora = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(stats.totalEnMora);
 
   const todayStr = new Date().toISOString().split('T')[0];
@@ -79,7 +80,7 @@ export const Dashboard: React.FC = () => {
       </div>
 
       {/* TARJETAS KPI ADAPTATIVAS */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
         <div className="glass-panel p-4 sm:p-5 rounded-2xl border border-slate-800 space-y-2.5">
           <div className="flex items-center justify-between">
             <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Cartera Total</span>
@@ -104,6 +105,17 @@ export const Dashboard: React.FC = () => {
 
         <div className="glass-panel p-4 sm:p-5 rounded-2xl border border-slate-800 space-y-2.5">
           <div className="flex items-center justify-between">
+            <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Gastos Totales HOY</span>
+            <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400">
+              <TrendingDown className="w-4 h-4 sm:w-5 sm:h-5" />
+            </div>
+          </div>
+          <p className="text-xl sm:text-2xl font-black text-amber-400">{formattedGastos}</p>
+          <p className="text-xs text-slate-400">Egresos operativos hoy</p>
+        </div>
+
+        <div className="glass-panel p-4 sm:p-5 rounded-2xl border border-slate-800 space-y-2.5">
+          <div className="flex items-center justify-between">
             <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Cartera en Mora</span>
             <div className="p-2 rounded-xl bg-red-500/20 text-red-400">
               <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -113,7 +125,7 @@ export const Dashboard: React.FC = () => {
           <p className="text-xs text-red-300 font-medium">{stats.porcentajeMora}% de índice de mora</p>
         </div>
 
-        <div className="glass-panel p-4 sm:p-5 rounded-2xl border border-slate-800 space-y-2.5">
+        <div className="glass-panel p-4 sm:p-5 rounded-2xl border border-slate-800 space-y-2.5 sm:col-span-2 lg:col-span-1">
           <div className="flex items-center justify-between">
             <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Clientes Activos</span>
             <div className="p-2 rounded-xl bg-purple-500/20 text-purple-400">
